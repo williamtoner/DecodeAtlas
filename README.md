@@ -7,14 +7,12 @@ tokens: how many devices serve one decode replica, and how the model is split ac
 
 | Section | What it shows |
 |---|---|
-| Hero | Accelerators per decode instance for 23 models, from model-card recipes to disclosed deployments |
-| 01 | Why decode is memory-bound, and why MoE pushes the critical batch out by *E/k* |
-| 02 | Tensor, pipeline and expert parallelism, and data-parallel attention |
-| 03–05 | One server at TP8; deep pipelines (the 2023 GPT-4 leak); 2D weight sharding on TPUs |
-| 06–07 | How the KV cache's shape picks the attention layout; DeepSeek's wide expert parallelism |
-| 08–09 | Prefill/decode disaggregation; attention–FFN disaggregation |
-| 10–11 | Scale-up domains (NVL72, TPU pods, supernodes); the throughput vs speed-per-user curve |
-| 12 | Lab by lab, including what the closed labs do and do not disclose |
+| Opening chart | Each major lab against the deployment layouts it has said it uses |
+| 01 | The four ways to split a model across chips |
+| 02–04 | One server split 8 ways; servers in a line (the 2023 GPT-4 leak); Google's TPU grid |
+| 05 | Wide expert parallelism, as DeepSeek, Kimi, Meituan and Huawei Cloud run it |
+| 06 | Prefill and decode on separate machines; attention and experts on separate machines |
+| 07 | How many chips work on one copy of each model |
 
 [`report.md`](report.md) is the long-form research report behind the page, with a citation and a
 confidence label (official, third-party, leak, estimate) for every number.
