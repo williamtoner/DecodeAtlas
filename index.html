@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DecodeAtlas: how frontier LLMs decode</title>
+<meta name="description" content="A picture guide to how the big LLMs are laid out across accelerators when they generate tokens: tensor, pipeline and expert parallelism, disaggregation, and what each lab has disclosed. By William Toner.">
+<meta property="og:title" content="DecodeAtlas: how frontier LLMs decode">
+<meta property="og:description" content="How many accelerators serve one decode replica, and how the model is split across them. A picture guide.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&display=swap" rel="stylesheet">
+<style>
+@font-face{font-family:"KaTeX_Main";src:url(https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Main-Regular.woff2) format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"KaTeX_Main";src:url(https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Main-Bold.woff2) format("woff2");font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:"KaTeX_Main";src:url(https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Main-Italic.woff2) format("woff2");font-weight:400;font-style:italic;font-display:swap}
+@font-face{font-family:"KaTeX_Math";src:url(https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Math-Italic.woff2) format("woff2");font-weight:400;font-style:italic;font-display:swap}
+:root{
+  --ink:#0E0F13; --ink-2:#15171D; --ink-3:#1C1F27; --line:#2C303A;
+  --paper:#ECEAE4; --slate:#9A9EAB; --faint:#5F6370;
+  --blue:#58C4DD; --teal:#5CD0B3; --green:#83C167; --yellow:#FFE36E;
+  --gold:#F0AC5F; --red:#FC6255; --purple:#A98BD4; --maroon:#C55F73;
+  --serif:"Newsreader",Georgia,"Times New Roman",serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --cm:"KaTeX_Main","Newsreader",Georgia,serif;
+  --measure:40rem;
+}
+*{box-sizing:border-box}
+html{background:var(--ink);color:var(--paper);-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;font-family:var(--serif);font-size:1.15rem;line-height:1.6;font-optical-sizing:auto;background:var(--ink)}
+a{color:var(--paper);text-decoration-color:var(--slate);text-underline-offset:.18em;text-decoration-thickness:1px}
+a:hover{text-decoration-color:var(--blue)}
+:focus-visible{outline:2px solid var(--blue);outline-offset:3px;border-radius:2px}
+.wrap{max-width:72rem;margin:0 auto;padding:0 1.25rem}
+.prose{max-width:var(--measure)}
+p{margin:0 0 1em}
+b,strong{font-weight:600}
+
+.hero{padding-block:2.5rem 1rem}
+.top{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;font-size:1rem;color:var(--slate);margin-bottom:2rem;flex-wrap:wrap}
+.top b{color:var(--paper);font-weight:600;letter-spacing:.01em}
+.top nav{display:flex;flex-wrap:wrap;gap:.25rem 1.25rem}
+.top nav a{color:var(--slate);text-decoration:none}
+.top nav a:hover{color:var(--paper)}
+h1{font-weight:300;font-size:clamp(2.3rem,5.4vw,4.4rem);line-height:1.04;letter-spacing:-.02em;margin:0 0 1rem;max-width:20ch;text-wrap:balance}
+h1 .n{font-style:italic;font-weight:500;background:linear-gradient(90deg,var(--blue),var(--teal) 45%,var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
+.lede{font-size:1.3rem;color:var(--slate);max-width:36rem;margin:0 0 2rem;line-height:1.45}
+.lede b{color:var(--paper);font-weight:500}
+
+main section{padding-top:4.5rem}
+h2{font-weight:400;font-size:clamp(1.65rem,3vw,2.3rem);line-height:1.15;letter-spacing:-.01em;margin:0 0 .9rem;text-wrap:balance}
+h2 .k{font-family:var(--mono);font-size:.5em;color:var(--faint);letter-spacing:.06em;vertical-align:.45em;margin-right:.6em}
+h3{font-weight:500;font-size:1.25rem;margin:2rem 0 .5rem}
+
+.stage{position:relative;border-radius:8px;background:var(--ink-2);padding:clamp(.6rem,1.8vw,1.4rem);margin:1.5rem 0 .6rem;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.stage svg{display:block;width:100%;height:auto;min-width:700px}
+.legend{font-size:1rem;color:var(--slate);max-width:var(--measure);line-height:1.5;margin:.4rem 0 0}
+.legend b{color:var(--paper);font-weight:500}
+
+.tldr{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:1rem 2rem;margin:2.5rem 0 0;padding:0;list-style:none}
+.tldr li{border-top:1px solid var(--line);padding-top:.8rem;font-size:1.05rem;line-height:1.5;color:var(--slate)}
+.tldr li b{display:block;color:var(--paper);font-weight:500;font-size:1.15rem;margin-bottom:.25rem}
+
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr));gap:0 3rem}
+.note{font-size:1rem;color:var(--slate)}
+.tag{display:inline-block;font-family:var(--mono);font-size:.72rem;line-height:1;padding:.28em .45em;border-radius:3px;border:1px solid currentColor;vertical-align:.12em;letter-spacing:.02em}
+.tag.o{color:var(--green)} .tag.p{color:var(--blue)} .tag.l{color:var(--red)} .tag.e{color:var(--gold)} .tag.u{color:var(--faint)}
+code{font-family:var(--mono);font-size:.85em;color:var(--paper);background:var(--ink-3);padding:.08em .35em;border-radius:3px}
+
+/* lab cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(16.5rem,1fr));gap:1rem;margin-top:1.5rem}
+.card{background:var(--ink-2);border-radius:8px;padding:1rem 1.1rem 1.1rem;border-top:3px solid var(--line);display:flex;flex-direction:column;gap:.35rem}
+.card.d{border-top-color:var(--gold)} .card.r{border-top-color:var(--blue)} .card.c{border-top-color:var(--faint)}
+.card h4{margin:0;font-size:1.15rem;font-weight:600;display:flex;justify-content:space-between;align-items:baseline;gap:.5rem}
+.card .big{font-family:var(--cm);font-size:2rem;line-height:1.1;color:var(--paper)}
+.card .big small{font-size:.5em;color:var(--slate);font-family:var(--serif)}
+.card.c .big{color:var(--faint)}
+.card p{margin:0;font-size:.98rem;line-height:1.45;color:var(--slate)}
+.card p b{color:var(--paper);font-weight:500}
+
+.sources{columns:2 22rem;column-gap:3rem;font-size:.95rem;color:var(--slate);padding-left:1.1rem}
+.sources li{break-inside:avoid;margin-bottom:.35rem}
+footer{color:var(--slate);font-size:1rem;padding-block:5rem 3rem}
+
+/* svg text */
+svg .t{font-family:var(--cm);fill:var(--paper)}
+svg .m{font-family:"KaTeX_Math","KaTeX_Main",serif;font-style:italic}
+svg .mono{font-family:var(--mono)}
+svg .flow{stroke-dasharray:5 6;animation:flow 1.1s linear infinite}
+svg .flow.slow{animation-duration:2.2s}
+@keyframes flow{to{stroke-dashoffset:-22}}
+svg .pulse{animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+svg .wave{animation:wave 2.56s linear infinite}
+@keyframes wave{0%{fill:#58C4DD}12%{fill:#1C1F27}100%{fill:#1C1F27}}
+@media (prefers-reduced-motion:reduce){svg .flow,svg .pulse,svg .wave{animation:none}}
+@media (max-width:600px){body{font-size:1.08rem}.lede{font-size:1.15rem}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs id="gdefs"></defs></svg>
+
+<header class="hero wrap">
+  <div class="top">
+    <b>DecodeAtlas</b>
+    <nav aria-label="Sections">
+      <a href="#why">Why</a><a href="#splits">Splits</a><a href="#node">Node</a><a href="#wide">Wide EP</a><a href="#disagg">Disaggregation</a><a href="#hardware">Hardware</a><a href="#curve">Trade-off</a><a href="#labs">Labs</a>
+    </nav>
+  </div>
+  <h1>How frontier models <span class="n">decode</span></h1>
+  <p class="lede">What is publicly known about how the big LLMs are laid out across accelerators while they generate tokens. <b>Model cards say one 8-GPU server. The deployments that labs have disclosed are often far wider.</b></p>
+  <div class="stage">
+    <svg id="fig-count" viewBox="0 0 960 760" role="img" aria-label="Dot plot of accelerators per decode instance for 23 models, from 1 for Gemma to 320 for DeepSeek V3's design, with closed models marked as undisclosed"></svg>
+  </div>
+  <p class="legend">Each row is one model's <b>decode instance</b>: the accelerators that together produce its next token. Blue rows are what model cards and framework recipes prescribe. Gold rows are deployments that a lab, or a framework team working with it, actually described. A line spans a stated range, for example a minimum unit and a larger benchmarked one. The closed labs publish neither.</p>
+
+  <ul class="tldr">
+    <li><b>Two regimes</b>Open-weight recipes fit one server at TP4–TP8. Disclosed large-MoE deployments run decode as one instance of 32–320 accelerators, with experts spread thin and attention run separately on every device.</li>
+    <li><b>The reason is arithmetic</b>Decode is memory-bound until each weight is reused by roughly 280 tokens per step. An MoE expert sees only <i>k/E</i> of the batch, so it needs ~32× more.</li>
+    <li><b>Closed labs say almost nothing</b>OpenAI, Anthropic, Google and xAI name chips, never replica sizes. The only closed-model layout on record is the unconfirmed 2023 GPT-4 leak.</li>
+  </ul>
+</header>
+
+<main class="wrap">
+
+<section id="why">
+  <h2><span class="k">01</span>Why decode is a different problem</h2>
+  <div class="prose">
+    <p>Prefill reads the whole prompt at once, so the matrix multiplies are big and the chip is busy. Decode produces <b>one token per sequence per step</b>. Each step must still stream every active weight, plus every sequence's KV cache, out of memory. At small batch the chip spends its time waiting on bytes, not doing arithmetic.</p>
+  </div>
+  <div class="stage">
+    <svg id="fig-roof" viewBox="0 0 960 430" role="img" aria-label="Roofline: fraction of peak FLOPs against tokens per step, with a dense knee at about 280 tokens and an MoE knee at about 9,000"></svg>
+  </div>
+  <p class="legend">Batching reuses each weight read across many tokens, so utilisation climbs with batch until the <b>critical batch</b>, where compute takes over. For a mixture-of-experts model, each expert only sees the tokens routed to it, which pushes the knee out by <i>E/k</i>. That is the whole reason big MoEs are served on big pools of accelerators. Numbers from the <a href="https://jax-ml.github.io/scaling-book/inference/">JAX scaling book</a>; deployment points from DeepSeek and Moonshot disclosures.</p>
+</section>
+
+<section id="splits">
+  <h2><span class="k">02</span>Four ways to split a model</h2>
+  <div class="prose">
+    <p>Every deployment below is a combination of these four. What differs is <b>what each device holds</b> and <b>what has to travel</b> between devices on every step.</p>
+  </div>
+  <div class="stage">
+    <svg id="fig-split" viewBox="0 0 960 560" role="img" aria-label="Four panels: tensor parallel, pipeline parallel, expert parallel and data-parallel attention"></svg>
+  </div>
+  <p class="legend">Colours are fixed for the rest of the page: <b style="color:var(--blue)">blue</b> dense weights, <b style="color:var(--gold)">gold</b> KV cache, <b style="color:var(--green)">green</b> experts, <b style="color:var(--red)">red</b> communication, <b style="color:var(--purple)">violet</b> prefill.</p>
+</section>
+
+<section id="node">
+  <h2><span class="k">03</span>The default: one server, tensor-parallel 8</h2>
+  <div class="prose">
+    <p>Almost every open-weight model card targets this. Eight GPUs share one NVLink switch, every GPU holds an eighth of every layer, and two all-reduces per layer stitch the pieces back together. With grouped-query attention's 8 KV heads, each GPU stores exactly one head's cache, so <b>TP8 is also the natural ceiling</b>.</p>
+  </div>
+  <div class="stage">
+    <svg id="fig-node" viewBox="0 0 960 520" role="img" aria-label="An 8-GPU server running tensor-parallel 8, with variants TP1 and TP8 by PP2"></svg>
+  </div>
+  <p class="legend">The same eight GPUs cover the whole latency–throughput range. Meta reports Llama 4 Maverick at about 4 ms per token at batch 1 on 8 H100s, and NVIDIA's B200 record of 1,038 tok/s for one user came from TP8 with EAGLE-3 speculation. The same B200 server at large batch peaks at 72,000 tok/s. Meta runs its decode hosts separately from its prefill hosts (<a href="#disagg">§07</a>).</p>
+</section>
+
+<section id="pipeline">
+  <h2><span class="k">04</span>The old wide layout: deep pipelines</h2>
+  <div class="prose">
+    <p>Before MoE-aware serving, the way to fit a huge model was to cut it into layer stages across nodes. The only per-replica layout ever reported for a closed frontier model is of this kind: the 2023 GPT-4 leak. Pipelining fits memory but <b>does not make a single token faster</b>, because every token still visits every stage in turn.</p>
+  </div>
+  <div class="stage">
+    <svg id="fig-gpt4" viewBox="0 0 960 330" role="img" aria-label="128 GPUs arranged as 16 pipeline stages of 8 tensor-parallel GPUs, as reported by the GPT-4 leak"></svg>
+  </div>
+  <p class="legend">Reported by SemiAnalysis in July 2023 and never confirmed by OpenAI. Meta's Llama 3.1 405B in BF16 is a small first-party example of the same idea: TP8 within each node and PP2 across 2 nodes (16 H100s). In FP8 it fits one node and the pipeline goes away.</p>
+</section>
+
+<section id="tpu">
+  <h2><span class="k">05</span>On TPUs: shard weights on two axes of a torus</h2>
+  <div class="prose">
+    <p>Google's published recipe for decode, from <a href="https://arxiv.org/abs/2211.05102">Pope et al.</a>, served PaLM 540B on 64 TPU v4 chips. Instead of slicing each weight one way, it is sliced along two torus axes, which keeps communication small as the chip count grows. <b>Decode always uses this "2D weight-stationary" layout</b>, because the batch in tokens is small.</p>
+  </div>
+  <div class="stage">
+    <svg id="fig-tpu" viewBox="0 0 960 440" role="img" aria-label="A 4 by 4 by 4 TPU torus with a weight matrix sharded 4 ways along one axis and 16 ways along the other two"></svg>
+  </div>
+  <p class="legend">Gemini is a sparse MoE served on TPUs with prefill/decode disaggregation and speculative decoding. Google has not disclosed chips per replica. The current TPU for serving, TPU 8i, was built around MoE all-to-all traffic, with a "Boardfly" topology that reaches 1,024 chips in at most 7 hops.</p>
+</section>
+
+<section id="kv">
+  <h2><span class="k">06</span>The shape of the KV cache decides the attention layout</h2>
+  <div class="prose">
+    <p>Batch only helps if the KV cache fits, so bytes per token matter. They also decide how attention can be split. GQA's 8 heads split cleanly over 8 GPUs. <b>MLA, used by DeepSeek and Kimi, compresses KV into one shared latent</b>: tensor-parallel attention would copy that latent onto every GPU. So these models run attention <b>data-parallel</b>, with each GPU keeping its own sequences.</p>
+  </div>
+  <div class="stage">
+    <svg id="fig-kv" viewBox="0 0 960 400" role="img" aria-label="KV bytes per token for six models, and how GQA and MLA caches split across GPUs"></svg>
+  </div>
+  <p class="legend">At DeepSeek's production average of ~5,000 tokens of context, one sequence holds ~350 MB of KV. Eighty-eight sequences per GPU is ~31 GB, which fits on an 80 GB H800 only because each GPU holds just three experts per layer. Google reached the same answer for PaLM's multi-query attention in 2022: sharding KV by batch instead of by head raised the maximum context at batch 128 from 660 to 43,000 tokens.</p>
+</section>
+
+<section id="wide">
+  <h2><span class="k">07</span>Wide expert parallelism with data-parallel attention</h2>
+  <div class="prose">
+    <p>This is the layout DeepSeek runs in production and documents in the most detail. <b>Every GPU runs attention for its own ~88 sequences, and holds just 2 routed experts and 1 shared expert per layer.</b> After attention, each token is shipped to its 8 chosen experts, wherever they live, and the results are shipped back. One decode instance is 18 nodes, 144 H800s.</p>
+  </div>
+  <div class="stage">
+    <svg id="fig-ds" viewBox="0 0 960 560" role="img" aria-label="144 GPUs in 18 nodes; one token is dispatched from one GPU to experts on 8 other GPUs"></svg>
+  </div>
+  <p class="legend">Figures from DeepSeek's <a href="https://github.com/deepseek-ai/open-infra-index/blob/main/202502OpenSourceWeek/day_6_one_more_thing_deepseekV3R1_inference_system_overview.md">Day-6 disclosure</a> (Feb 2025): a decode unit "spans 18 nodes", EP144 / DP144, with 32 redundant experts (144 × 2 = 256 + 32). The fleet averaged 226.75 nodes over the day. The sequences per GPU figure is derived from DeepSeek's token volumes. Every dispatch and combine crosses InfiniBand, so DeepSeek overlaps communication with compute using two micro-batches and a 5-stage pipeline.</p>
+
+  <h3>The DeepSeek lineage, from one node to a supernode</h3>
+  <div class="stage">
+    <svg id="fig-lineage" viewBox="0 0 960 400" role="img" aria-label="DeepSeek decode instance sizes: 8 GPUs for V2, 320 for the V3 design, 144 in production, 64 to 128 for V4.1"></svg>
+  </div>
+  <p class="legend">Each square is one accelerator, and each column of eight is one server. The V3 report's 320-GPU design used 4-way tensor-parallel attention. Production dropped it: with MLA, TP4 would have stored every latent four times. DeepInfer, open-sourced on 20 October 2026 as DeepSeek's production engine, keeps the same idea on one NVLink-class supernode. Others run the same pattern: Kimi K2 decodes on 96 H200s at 480 sequences each, and Huawei serves DeepSeek-R1 on 160 Ascend 910Cs at EP320.</p>
+</section>
+
+<section id="disagg">
+  <h2><span class="k">08</span>Prefill and decode on different machines</h2>
+  <div class="prose">
+    <p>Prefill wants few GPUs doing big matmuls. Decode wants as many sequences as the KV pool can hold. Running both on the same GPUs makes each worse, so <b>disaggregation is now standard</b> wherever labs describe their stack: DeepSeek, Meta, Moonshot, Huawei, Meituan, Baidu and, per SemiAnalysis, Gemini. The prompt's KV cache is computed on a prefill GPU and shipped across.</p>
+  </div>
+  <div class="stage">
+    <svg id="fig-pd" viewBox="0 0 960 560" role="img" aria-label="A prefill pool sends KV caches to a decode pool; bars show prefill-to-decode ratios in nine deployments"></svg>
+  </div>
+  <p class="legend">The ratio follows the workload: long prompts with short answers need more prefill, and long reasoning traces need more decode. DeepSeek's figure is derived from its daily token volumes and per-node throughput. As decode instances have grown, prefill instances have shrunk; DeepSeek's went from 32 GPUs to 2–8.</p>
+</section>
+
+<section id="afd">
+  <h2><span class="k">09</span>Going further: attention and experts on different machines</h2>
+  <div class="prose">
+    <p>Inside decode, attention and the FFN also want different things. Attention holds KV and grows with context. Experts hold weights and grow with batch. <b>Attention–FFN disaggregation</b> puts them on separate pools and bounces micro-batches between them, so neither pool sits idle.</p>
+  </div>
+  <div class="stage">
+    <svg id="fig-afd" viewBox="0 0 960 400" role="img" aria-label="Gantt chart of three micro-batches alternating between an attention pool and an FFN pool"></svg>
+  </div>
+  <p class="legend">With three or more micro-batches in flight, the attention pool works on one while the expert pool works on another. The split pays only when the two stage times match: vLLM on Ascend found 48 attention to 16 FFN devices 5% slower than plain EP64, but 64 to 16 was 11% faster.</p>
+</section>
+
+<section id="hardware">
+  <h2><span class="k">10</span>Why rack-scale hardware matters for decode</h2>
+  <div class="prose">
+    <p>Wide EP sends two all-to-alls per MoE layer, about 120 per forward pass for DeepSeek-R1. Inside an NVLink domain that traffic is cheap. Once it leaves the server, <b>each GPU has about 18× less bandwidth</b>. Hardware for serving MoE models is therefore built around ever larger scale-up domains.</p>
+  </div>
+  <div class="stage">
+    <svg id="fig-net" viewBox="0 0 960 300" role="img" aria-label="Four 8-GPU servers joined by a network, compared with one 72-GPU NVLink rack"></svg>
+  </div>
+  <div class="stage">
+    <svg id="fig-domain" viewBox="0 0 960 430" role="img" aria-label="Bar chart of accelerators per scale-up domain, from 4 for Maia 200 to 9,216 for an Ironwood pod"></svg>
+  </div>
+  <p class="legend">On GB200 NVL72, TensorRT-LLM gets up to 1.8× more tokens per GPU at EP32 than at EP8. In SemiAnalysis's runs the gap to 8-GPU B200 servers opens exactly where B200 must take EP across the network. Two-batch overlap, essential on InfiniBand, was switched off inside NVL72 because communication became cheap.</p>
+</section>
+
+<section id="curve">
+  <h2><span class="k">11</span>Every deployment is a point on one curve</h2>
+  <div class="prose">
+    <p>The same hardware can serve many users slowly or a few users fast. As the per-user speed target rises, the batch shrinks and <b>tokens per GPU fall 10–30×</b>. Which parallel layout wins changes along the way.</p>
+  </div>
+  <div class="stage">
+    <svg id="fig-curve" viewBox="0 0 960 450" role="img" aria-label="Throughput per GPU against speed per user for DeepSeek-R1 on GB200 NVL72 and B200"></svg>
+  </div>
+  <p class="legend">DeepSeek-R1 in FP4, 1K tokens in and 1K out, disaggregated, with multi-token prediction (<a href="https://inferencex.semianalysis.com/blog/gb200-nvl72-vs-b200-disagg-deepseek-r1-fp4-dynamo-trt">SemiAnalysis InferenceX</a>, May 2026). Points compare the two systems at matched speeds per user; throughput figures from other sources on this page are measured under different settings and are not comparable to these. Past ~300 tok/s per user, GPUs give way to SRAM machines: Cerebras serves OpenAI's Codex-Spark at over 1,000 tok/s, and NVIDIA licensed Groq's LPU design for its decode racks.</p>
+</section>
+
+<section id="labs">
+  <h2><span class="k">12</span>Lab by lab</h2>
+  <div class="prose">
+    <p>The number on each card is accelerators per decode instance. <span class="tag o">O</span> official or first-party, <span class="tag p">3P</span> third-party recipe or measurement, <span class="tag l">L</span> leak or press report, <span class="tag e">E</span> estimate.</p>
+  </div>
+  <div class="cards" id="cards"></div>
+  <p class="legend" style="margin-top:1.2rem">Releases from July–October 2026 (GPT-6 Astra, the Claude 5.5 family, Gemini 4 Argon, Grok 4.6, Qwen3.8-Max, GLM-5.3, MiniMax M3.1 Flash) have not changed this picture. None comes with a disclosed decode topology. Kimi K3 (2.8T total, 104B active) is the exception, via NVIDIA's recipe.</p>
+</section>
+
+<section id="sources">
+  <h2><span class="k">13</span>Sources</h2>
+  <div class="prose"><p class="note">The <a href="report.md">long-form report</a> has every number on this page with its citation, plus the conflicts between sources.</p></div>
+  <ol class="sources">
+    <li><a href="https://github.com/deepseek-ai/open-infra-index/blob/main/202502OpenSourceWeek/day_6_one_more_thing_deepseekV3R1_inference_system_overview.md">DeepSeek, V3/R1 inference system overview (Day 6)</a></li>
+    <li><a href="https://arxiv.org/abs/2412.19437">DeepSeek-V3 technical report</a></li>
+    <li><a href="https://github.com/deepseek-ai/DeepInfer">DeepSeek DeepInfer and deployment Q&amp;A</a></li>
+    <li><a href="https://arxiv.org/abs/2505.09343">DeepSeek, Insights into DeepSeek-V3 (ISCA 2025)</a></li>
+    <li><a href="https://huggingface.co/moonshotai/Kimi-K2-Instruct/blob/main/docs/deploy_guidance.md">Moonshot, Kimi K2 deployment guide</a></li>
+    <li><a href="https://lmsys.org/blog/2025-05-05-large-scale-ep/">LMSYS, DeepSeek with PD and large-scale EP on 96 H100s</a></li>
+    <li><a href="https://lmsys.org/blog/2025-09-25-gb200-part-2/">LMSYS, DeepSeek on GB200 NVL72</a></li>
+    <li><a href="https://arxiv.org/abs/2507.19427">StepFun, Step-3 and attention–FFN disaggregation</a></li>
+    <li><a href="https://arxiv.org/abs/2509.01322">Meituan, LongCat-Flash technical report</a></li>
+    <li><a href="https://arxiv.org/abs/2504.02263">ByteDance, MegaScale-Infer</a></li>
+    <li><a href="https://arxiv.org/abs/2506.12708">Huawei, CloudMatrix384 serving DeepSeek-R1</a></li>
+    <li><a href="https://arxiv.org/abs/2508.02520">Huawei Cloud, xDeepServe</a></li>
+    <li><a href="https://arxiv.org/abs/2407.21783">Meta, The Llama 3 herd of models</a></li>
+    <li><a href="https://pytorch.org/blog/disaggregated-inference-at-scale-with-pytorch-vllm/">Meta, disaggregated inference at scale</a></li>
+    <li><a href="https://arxiv.org/abs/2211.05102">Pope et al., Efficiently scaling transformer inference</a></li>
+    <li><a href="https://jax-ml.github.io/scaling-book/inference/">Google DeepMind, How to scale your model: inference</a></li>
+    <li><a href="https://arxiv.org/abs/2508.15734">Google, environmental impact of serving Gemini</a></li>
+    <li><a href="https://www.anthropic.com/engineering/a-postmortem-of-three-recent-issues">Anthropic, postmortem of three recent issues</a></li>
+    <li><a href="https://arxiv.org/abs/2508.10925">OpenAI, gpt-oss model card</a></li>
+    <li><a href="https://the-decoder.com/gpt-4-architecture-datasets-costs-and-more-leaked/">The Decoder, summary of the GPT-4 leak</a></li>
+    <li><a href="https://developer.nvidia.com/blog/scaling-large-moe-models-with-wide-expert-parallelism-on-nvl72-rack-scale-systems">NVIDIA, wide expert parallelism on NVL72</a></li>
+    <li><a href="https://inferencex.semianalysis.com/blog/gb200-nvl72-vs-b200-disagg-deepseek-r1-fp4-dynamo-trt">SemiAnalysis InferenceX, GB200 NVL72 vs B200</a></li>
+    <li><a href="https://cloud.google.com/blog/products/compute/tpu-8t-and-tpu-8i-technical-deep-dive">Google, TPU 8t and 8i deep dive</a></li>
+    <li><a href="https://docs.nvidia.com/dynamo/v1.5.1/recipes/kimi-k3">NVIDIA Dynamo, Kimi K3 recipe</a></li>
+  </ol>
+</section>
+</main>
+
+<footer class="wrap">
+  William Toner, October 2026. Source on <a href="https://github.com/williamtoner/DecodeAtlas">GitHub</a>, MIT licence.
+</footer>
+
+<script>
+const NS="http://www.w3.org/2000/svg";
+const C={ink:"#0E0F13",panel:"#15171D",cell:"#1C1F27",line:"#2C303A",dim:"#5F6370",soft:"#9A9EAB",text:"#ECEAE4",
+  blue:"#58C4DD",teal:"#5CD0B3",green:"#83C167",yellow:"#FFE36E",gold:"#F0AC5F",red:"#FC6255",purple:"#A98BD4",maroon:"#C55F73"};
+const $=id=>document.getElementById(id);
+function S(tag,a,p){const e=document.createElementNS(NS,tag);if(a)for(const k in a)if(a[k]!=null)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e}
+// text; segments wrapped in _underscores_ render as math italic
+function T(p,x,y,str,o={}){
+  const e=S("text",{x,y,"text-anchor":o.a||"start",class:"t "+(o.c||""),fill:o.f||C.text,"font-size":o.s||15,"font-weight":o.w,"font-style":o.i?"italic":null,opacity:o.op},p);
+  for(const part of String(str).split(/(_[^_]+_)/)){
+    if(!part)continue;
+    if(part.length>2&&part[0]==="_"&&part.endsWith("_")){S("tspan",{class:"m"},e).textContent=part.slice(1,-1)}
+    else e.appendChild(document.createTextNode(part))}
+  return e}
+function TL(p,x,y,lines,o={}){const lh=o.lh||(o.s||15)*1.4;lines.forEach((l,i)=>T(p,x,y+i*lh,l,o))}
+function R(p,x,y,w,h,o={}){return S("rect",{x,y,width:w,height:h,rx:o.rx??4,fill:o.f??C.cell,stroke:o.st,"stroke-width":o.sw??1.2,"stroke-dasharray":o.dash,opacity:o.op,class:o.c},p)}
+function L(p,x1,y1,x2,y2,o={}){return S("line",{x1,y1,x2,y2,stroke:o.st||C.line,"stroke-width":o.sw||1.2,"stroke-dasharray":o.dash,opacity:o.op,class:o.c,"stroke-linecap":"round"},p)}
+function P(p,d,o={}){return S("path",{d,fill:o.f||"none",stroke:o.st,"stroke-width":o.sw||1.6,"stroke-dasharray":o.dash,opacity:o.op,class:o.c,"stroke-linecap":"round","stroke-linejoin":"round"},p)}
+function A(p,d,col,o={}){const e=P(p,d,{st:C[col],sw:o.sw||1.7,dash:o.dash,c:o.c,op:o.op});e.setAttribute("marker-end",`url(#ah-${col})`);if(o.both)e.setAttribute("marker-start",`url(#ah-${col})`);return e}
+function Dot(p,x,y,r,f,o={}){return S("circle",{cx:x,cy:y,r,fill:f,stroke:o.st,"stroke-width":o.sw,"stroke-dasharray":o.dash,class:o.c},p)}
+function G(p,o={}){return S("g",o,p)}
+function rng(seed){return()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}}
+// arrowheads
+{const gd=$("gdefs");for(const k of ["blue","teal","green","yellow","gold","red","purple","soft","text","dim"]){
+  const m=S("marker",{id:"ah-"+k,viewBox:"0 0 10 10",refX:"8",refY:"5",markerWidth:"9",markerHeight:"9",markerUnits:"userSpaceOnUse",orient:"auto-start-reverse"},gd);
+  S("path",{d:"M0,0.8 L10,5 L0,9.2 L2.6,5 z",fill:C[k]},m)}}
+
+/* ---------- hero: devices per decode instance ---------- */
+(function(){
+  const s=$("fig-count");
+  const rows=[
+    ["Gemma 3 / 4",1,0,"r","1 GPU or TPU"],
+    ["gpt-oss-120b",1,8,"r","TP1 for throughput → TP8 for latency"],
+    ["Qwen3-235B",4,0,"r","TP4, FP8"],
+    ["MiniMax-M2",4,0,"r","TP4 + EP4"],
+    ["ERNIE 4.5 300B",4,0,"r","TP4, 4-bit weights"],
+    ["Grok-2",8,0,"r","TP8, FP8"],
+    ["Mistral Large 3",8,0,"r","TP8 + EAGLE"],
+    ["GLM-5",8,0,"r","TP8 + MTP"],
+    ["Qwen3.5-397B",8,0,"r","TP8, or DP8 + EP"],
+    ["Kimi K2.5",8,0,"r","TP8, INT4 experts"],
+    ["Kimi K3",16,0,"r","TP16 on GB200 (NVIDIA recipe)"],
+    ["Llama 4 Maverick",8,0,"p","TP8, prefill on another host (Meta)"],
+    ["Llama 3.1 405B",8,16,"p","FP8: TP8 · BF16: TP8 × PP2"],
+    ["Kimi K2",16,96,"p","16 minimum · 96 in the 4P12D setup"],
+    ["LongCat-Flash",16,128,"p","16 minimum · 128 benchmarked"],
+    ["Step-3",32,48,"p","attention and FFN on separate GPUs"],
+    ["PaLM 540B",64,0,"p","64 TPU v4, 2D weight sharding"],
+    ["Huawei xDeepServe",64,0,"p","64 Ascend 910C, EP128 over dies"],
+    ["DeepSeek V4.1-Flash",64,128,"p","one supernode, DP = EP, no TP"],
+    ["GPT-4 (2023)",128,0,"l","TP8 × PP16, unconfirmed leak"],
+    ["DeepSeek V3 / R1",144,0,"p","144 H800, DP144 / EP144"],
+    ["DeepSeek-R1 on CloudMatrix",160,0,"p","160 Ascend 910C = 320 dies"],
+    ["DeepSeek V3 report",320,0,"p","TP4 × DP80 / EP320 design"],
+  ];
+  const col={r:C.blue,p:C.gold,l:C.red};
+  const X0=262,X1=712,lx=v=>X0+Math.log2(v)/9*(X1-X0);
+  const top=92,rh=25,n=rows.length,bot=top+(n+1)*rh;
+  // bands
+  const b1=lx(11.3),b2=lx(90);
+  R(s,X0-14,top-26,b1-X0+14,bot-top+30,{f:"#58C4DD",op:.06,rx:6});
+  R(s,b1,top-26,b2-b1,bot-top+30,{f:"#5CD0B3",op:.035,rx:0});
+  R(s,b2,top-26,X1+14-b2,bot-top+30,{f:"#F0AC5F",op:.05,rx:6});
+  T(s,(X0-14+b1)/2,top-36,"one 8-GPU server",{a:"middle",s:13,f:C.blue});
+  T(s,(b1+b2)/2,top-36,"≤ one 72-GPU rack",{a:"middle",s:13,f:C.teal});
+  T(s,(b2+X1+14)/2,top-36,"many servers or a supernode",{a:"middle",s:13,f:C.gold});
+  // legend
+  const lg=[[C.blue,"model card or framework recipe"],[C.gold,"disclosed deployment or benchmark"],[C.red,"leak (unconfirmed)"]];
+  let lxp=X0-14;lg.forEach(([c,t])=>{Dot(s,lxp+6,22,5.5,c);const e=T(s,lxp+18,27,t,{s:14,f:C.soft});lxp+=e.getComputedTextLength()+46});
+  // ticks
+  for(let k=0;k<=9;k++){const x=lx(2**k);L(s,x,top-14,x,bot-8,{st:C.line,sw:.8,dash:"2 4"});T(s,x,bot+12,String(2**k),{a:"middle",s:13,f:C.soft})}
+  T(s,(X0+X1)/2,bot+36,"accelerators in one decode instance (log scale)",{a:"middle",s:14,f:C.soft});
+  rows.forEach(([name,lo,hi,cat,note],i)=>{
+    const y=top+i*rh+rh/2,c=col[cat];
+    T(s,X0-26,y+5,name,{a:"end",s:14.5});
+    if(hi){L(s,lx(lo),y,lx(hi),y,{st:c,sw:3,op:.85});Dot(s,lx(lo),y,4.5,C.panel,{st:c,sw:2});Dot(s,lx(hi),y,5.5,c)}
+    else if(cat==="l"){Dot(s,lx(lo),y,5,C.panel,{st:c,sw:2,dash:"2 2"})}
+    else Dot(s,lx(lo),y,5.5,c);
+    T(s,lx(hi||lo)+13,y+4.5,note,{s:12.5,f:C.soft});
+  });
+  // undisclosed row
+  const y=top+n*rh+rh/2;
+  T(s,X0-26,y+5,"GPT-5/6 · Claude · Gemini · Grok",{a:"end",s:14.5,f:C.soft});
+  L(s,X0,y,X1,y,{st:C.dim,sw:1.5,dash:"3 6"});
+  for(let k=1;k<9;k+=2)T(s,lx(2**k)+lx(2)/2-X0/2,y+5,"?",{a:"middle",s:15,f:C.dim});
+  T(s,X1+13,y+4.5,"not disclosed by any closed lab",{s:12.5,f:C.dim});
+})();
+
+/* ---------- roofline ---------- */
+(function(){
+  const s=$("fig-roof");
+  const x0=86,x1=590,y0=36,y1=350;
+  const lx=b=>x0+Math.log10(b)/5*(x1-x0), ly=u=>y1-(Math.log10(u)+3)/3*(y1-y0);
+  ["1","10","100","1k","10k","100k"].forEach((t,d)=>{const x=lx(10**d);L(s,x,y0,x,y1,{st:C.line,sw:.8});T(s,x,y1+20,t,{a:"middle",s:13,f:C.soft})});
+  ["0.1%","1%","10%","100%"].forEach((t,k)=>{const y=ly(10**(k-3));L(s,x0,y,x1,y,{st:C.line,sw:.8});T(s,x0-10,y+4,t,{a:"end",s:13,f:C.soft})});
+  T(s,(x0+x1)/2,y1+44,"tokens decoded per step, per copy of the weights",{a:"middle",s:14,f:C.soft});
+  const yl=T(s,0,0,"share of peak FLOPs the weight matmuls can use",{a:"middle",s:14,f:C.soft});yl.setAttribute("transform",`translate(24 ${(y0+y1)/2}) rotate(-90)`);
+  const bd=280,bm=280*32;
+  // memory-bound shading
+  P(s,`M${lx(1)},${y1} L${lx(1)},${ly(1/bd)} L${lx(bd)},${ly(1)} L${lx(bd)},${y1} Z`,{f:"rgba(88,196,221,.07)",st:"none"});
+  P(s,`M${lx(1)},${ly(1/bd)} L${lx(bd)},${ly(1)} L${lx(1e5)},${ly(1)}`,{st:C.blue,sw:3});
+  P(s,`M${lx(bm/1000)},${y1} L${lx(bm)},${ly(1)} L${lx(1e5)},${ly(1)}`,{st:C.green,sw:3,dash:"9 6"});
+  L(s,lx(bd),ly(1),lx(bd),y1,{st:C.blue,sw:1,dash:"3 4"});
+  L(s,lx(bm),ly(1),lx(bm),y1,{st:C.green,sw:1,dash:"3 4"});
+  T(s,lx(bd)+7,ly(.02),"dense knee ≈ 280",{s:13.5,f:C.blue});
+  T(s,lx(bm)+7,ly(.02),"MoE knee ≈ 9,000",{s:13.5,f:C.green});
+  T(s,lx(70),ly(.006),"memory-bound",{a:"middle",s:15,f:C.blue,i:1});
+  T(s,lx(2500),ly(1)-12,"compute-bound",{a:"middle",s:15,f:C.soft,i:1});
+  // points
+  const pts=[[1,1/bd,C.blue,"batch 1: under 0.5% of peak",12,20],[64,64/bd,C.blue,"batch 64: ≤ 23%",-12,4],
+    [144*88,1,C.gold,"DeepSeek: 144 GPUs × ~88 seqs",-16,24],[96*480,1,C.gold,"Kimi K2: 96 × 480",-10,46]];
+  pts.forEach(([b,u,c,t,dx,dy])=>{Dot(s,lx(b),ly(u),6,c,{st:C.panel,sw:2});T(s,lx(b)+dx,ly(u)+dy,t,{a:dx<0?"end":"start",s:13,f:c})});
+  // formula panel
+  const fx=632;let fy=58;
+  T(s,fx,fy,"One decode step reads",{s:15,f:C.soft});
+  T(s,fx,fy+=22,"every active weight + every KV cache",{s:15});
+  T(s,fx,fy+=40,"_t_ ≥ (_B_ · KV + _P_) / BW",{s:22,f:C.yellow});
+  T(s,fx,fy+=40,"Weights are shared by the batch, so",{s:15,f:C.soft});
+  T(s,fx,fy+=21,"batching helps until",{s:15,f:C.soft});
+  T(s,fx,fy+=34,"_B_crit ≈ FLOP/s ÷ bytes/s",{s:19,f:C.blue});
+  T(s,fx,fy+=22,"≈ 240 (TPU v5e) · ≈ 280 (H100), bf16",{s:13.5,f:C.soft});
+  T(s,fx,fy+=34,"An expert sees _k/E_ of the tokens:",{s:15,f:C.soft});
+  T(s,fx,fy+=32,"_B_crit × _E/k_ = 280 × 32 ≈ 9k",{s:19,f:C.green});
+  T(s,fx,fy+=22,"DeepSeek-V3: 8 of 256 experts",{s:13.5,f:C.soft});
+  T(s,fx,fy+=34,"Attention reads each sequence's own",{s:14,f:C.gold});
+  T(s,fx,fy+=19,"KV, so it never leaves the memory-bound",{s:14,f:C.gold});
+  T(s,fx,fy+=19,"regime, whatever the batch.",{s:14,f:C.gold});
+})();
+
+/* ---------- four splits ---------- */
+(function(){
+  const s=$("fig-split");
+  function panel(px,py,title,lines){
+    R(s,px,py,465,265,{f:"none",st:C.line,rx:8});
+    T(s,px+18,py+30,title,{s:18,w:700});
+    TL(s,px+18,py+232,lines,{s:13.5,f:C.soft,lh:19});
+  }
+  function gpus(px,py,fn){for(let i=0;i<4;i++){const gx=px+22+i*108,gy=py+60;R(s,gx,gy,94,110,{f:C.cell,st:C.dim});T(s,gx+47,gy+104,"GPU "+i,{a:"middle",s:11.5,f:C.soft});fn(gx,gy,i)}}
+  // TP
+  panel(0,0,"Tensor parallel",["Every GPU holds a slice of every layer and reads only its","share of the bytes. Costs 2 all-reduces per layer."]);
+  gpus(0,0,(gx,gy,i)=>{R(s,gx+12,gy+12,32,72,{f:C.blue,op:.25+.15*i,rx:2});T(s,gx+28,gy+53,"W",{a:"middle",s:13});R(s,gx+52,gy+12,30,72,{f:C.gold,op:.75,rx:2});T(s,gx+67,gy+53,"KV",{a:"middle",s:11,f:C.ink})});
+  P(s,"M69,176 L69,186 L393,186 L393,176",{st:C.red,sw:2});for(let i=1;i<3;i++)L(s,69+i*108,176,69+i*108,186,{st:C.red,sw:2});
+  T(s,231,204,"all-reduce",{a:"middle",s:13,f:C.red});
+  // PP
+  panel(485,0,"Pipeline parallel",["Each GPU holds whole layers. A token still visits every","stage in turn: fits memory, no faster per token."]);
+  gpus(485,0,(gx,gy,i)=>{for(let k=0;k<4;k++)R(s,gx+14,gy+10+k*16,66,11,{f:C.blue,op:.6,rx:2});T(s,gx+47,gy+86,`layers ${i*30+1}–${i*30+30}`,{a:"middle",s:10.5,f:C.soft});
+    if(i<3)A(s,`M${gx+96},${gy+50} L${gx+106},${gy+50}`,"blue",{sw:2})});
+  // EP
+  panel(0,285,"Expert parallel",["Each GPU holds a few experts. Tokens are dispatched to","their top-k experts and combined back: 2 all-to-alls per layer."]);
+  {const py=285;R(s,190,py+40,82,22,{f:C.ink,st:C.soft,rx:11});T(s,231,py+56,"router",{a:"middle",s:12,f:C.soft});Dot(s,180,py+51,5,C.yellow);
+   gpus(0,py+16,(gx,gy,i)=>{for(let k=0;k<2;k++){R(s,gx+14+k*36,gy+30,30,30,{f:C.green,op:.85,rx:3});T(s,gx+29+k*36,gy+50,"E"+(2*i+k),{a:"middle",s:11,f:C.ink})}});
+   A(s,`M215,${py+63} Q120,${py+80} 72,${py+103}`,"red",{c:"flow"});A(s,`M250,${py+63} Q350,${py+80} 400,${py+103}`,"red",{c:"flow"});}
+  // DP attention
+  panel(485,285,"Data-parallel attention",["Each GPU runs attention for its own sequences on its own KV.","Nothing duplicated, nothing sent. Pairs naturally with EP."]);
+  {const r=rng(7);gpus(485,301,(gx,gy,i)=>{R(s,gx+12,gy+12,24,72,{f:C.blue,op:.5,rx:2});T(s,gx+24,gy+52,"attn",{a:"middle",s:9.5});
+    for(let k=0;k<4;k++){const h=8+r()*10;R(s,gx+44,gy+14+k*18,40*(.5+r()*.5),h,{f:C.gold,op:.8,rx:2})}})}
+})();
+
+/* ---------- single node ---------- */
+(function(){
+  const s=$("fig-node");
+  R(s,24,30,520,340,{f:"none",st:C.soft,rx:10});
+  T(s,42,56,"one server · 8 GPUs · NVLink",{s:15,f:C.soft});
+  R(s,56,182,456,44,{f:C.blue,op:.18,st:C.blue,rx:4});
+  T(s,284,199,"NVSwitch · 900 GB/s per GPU · all-reduce twice per layer",{a:"middle",s:13,f:C.blue});
+  L(s,64,213,504,213,{st:C.red,sw:2.5,c:"flow slow"});
+  for(let r=0;r<2;r++)for(let i=0;i<4;i++){
+    const gx=56+i*116,gy=r?252:74,k=r*4+i;
+    R(s,gx,gy,108,100,{f:C.cell,st:C.dim});
+    T(s,gx+10,gy+20,"GPU "+k,{s:12,f:C.soft});
+    R(s,gx+10,gy+32,44,56,{f:C.blue,op:.55,rx:2});T(s,gx+32,gy+65,"⅛ W",{a:"middle",s:13});
+    R(s,gx+62,gy+32,36,56,{f:C.gold,op:.8,rx:2});T(s,gx+80,gy+58,"KV",{a:"middle",s:11,f:C.ink});T(s,gx+80,gy+73,"head "+k,{a:"middle",s:9.5,f:C.ink});
+    L(s,gx+54,r?gy:gy+100,gx+54,r?226:182,{st:C.blue,sw:2});
+  }
+  // variants
+  T(s,24,400,"Variants",{s:15,f:C.soft});
+  R(s,24,416,52,40,{f:C.cell,st:C.dim});R(s,32,424,36,24,{f:C.blue,op:.55,rx:2});
+  TL(s,88,430,["TP1: gpt-oss-120b fits one","80 GB GPU (MXFP4 experts)"],{s:13.5,lh:18});
+  for(let n=0;n<2;n++){const bx=300+n*86;R(s,bx,416,70,40,{f:"none",st:C.soft,rx:4});for(let i=0;i<8;i++)R(s,bx+6+(i%4)*15.5,422+Math.floor(i/4)*15,12,11,{f:C.blue,op:.55,rx:1.5})}
+  A(s,"M372,436 L384,436","blue",{sw:2});
+  TL(s,300,478,["TP8 × PP2: Llama 3.1 405B in BF16,","16 H100s across 2 nodes"],{s:13.5,lh:18});
+  // right column
+  const rx=588;let ry=48;
+  T(s,rx,ry,"Ships this recipe",{s:16,w:700});
+  [["Llama 3.1 405B","TP8, FP8 (Meta)"],["Llama 4 Maverick","TP8 (Meta production)"],["Mistral Large 3","TP8 + EAGLE"],["GLM-5","TP8 + MTP"],["Qwen3.5-397B","TP8 or DP8 + EP"],["Kimi K2.5","TP8, INT4 experts"],["MiniMax-M3","TP8 on B200"],["Grok-2","TP8, FP8"]]
+    .forEach(([m,c],i)=>{const y=ry+28+i*23;Dot(s,rx+5,y-5,3.5,C.blue);T(s,rx+16,y,m,{s:14});T(s,rx+150,y,c,{s:13.5,f:C.soft})});
+  ry+=244;
+  T(s,rx,ry,"Measured on one server",{s:16,w:700});
+  [["44.5 ms","per token, Llama 405B FP8, batch 1, H100"],["~4 ms","per token, Maverick, batch 1, H100 + EAGLE"],["1,038","tok/s for one user, Maverick, B200 + EAGLE-3"],["72,000","tok/s total, same B200 server, large batch"]]
+    .forEach(([v,t],i)=>{const y=ry+30+i*44;T(s,rx,y,v,{s:21,f:C.yellow});T(s,rx,y+18,t,{s:12.5,f:C.soft})});
+})();
+
+/* ---------- GPT-4 leak ---------- */
+(function(){
+  const s=$("fig-gpt4");
+  const x0=60,y0=70,cw=36,ch=21;
+  for(let c=0;c<16;c++){
+    R(s,x0+c*cw-3,y0-4,cw-4,8*ch+4,{f:"none",st:C.line,rx:4});
+    for(let r=0;r<8;r++){const e=R(s,x0+c*cw,y0+r*ch,cw-10,ch-6,{f:C.cell,st:C.dim,sw:.8,rx:2,c:"wave"});e.style.animationDelay=(c*0.16)+"s"}
+    if(c<15)A(s,`M${x0+c*cw+cw-8},${y0+4*ch-3} L${x0+c*cw+cw-2},${y0+4*ch-3}`,"soft",{sw:1.2});
+  }
+  const xr=x0+16*cw-6;
+  P(s,`M${x0-3},${y0-16} L${x0-3},${y0-22} L${xr},${y0-22} L${xr},${y0-16}`,{st:C.soft,sw:1.2});
+  T(s,(x0+xr)/2,y0-30,"16 pipeline stages, one per server, ≈ 7–8 layers each",{a:"middle",s:13.5,f:C.soft});
+  P(s,`M${x0-16},${y0} L${x0-22},${y0} L${x0-22},${y0+8*ch-6} L${x0-16},${y0+8*ch-6}`,{st:C.soft,sw:1.2});
+  const tl=T(s,0,0,"8-way TP",{a:"middle",s:13.5,f:C.soft});tl.setAttribute("transform",`translate(${x0-30} ${y0+4*ch}) rotate(-90)`);
+  T(s,x0,y0+8*ch+24,"a pulse = one micro-batch's activations moving stage to stage",{s:13,f:C.blue});
+  const rx=650;let y=58;
+  R(s,rx,y-16,124,22,{f:"none",st:C.red,rx:3});T(s,rx+62,y,"LEAK · July 2023",{a:"middle",s:12.5,f:C.red,c:"mono"});
+  [["~1.8T","parameters, MoE"],["16 × ~111B","experts, top-2 routing"],["~280B","active per token, 120 layers"],["128 GPUs","= TP8 × PP16"]]
+    .forEach(([v,t],i)=>{const yy=y+40+i*44;T(s,rx,yy,v,{s:20,f:C.yellow});T(s,rx,yy+18,t,{s:13,f:C.soft})});
+  T(s,rx,y+222,"Never confirmed. 120 layers don't divide",{s:12.5,f:C.dim});
+  T(s,rx,y+239,"into 16 equal stages.",{s:12.5,f:C.dim});
+})();
+
+/* ---------- TPU torus ---------- */
+(function(){
+  const s=$("fig-tpu");
+  const xc=[C.blue,C.teal,C.green,C.gold];
+  const pr=(x,y,z)=>[96+x*60+z*28,336-y*54-z*24];
+  for(let z=3;z>=0;z--)for(let x=0;x<4;x++)for(let y=0;y<4;y++){const [a,b]=pr(x,y,z);
+    if(x<3){const [c,d]=pr(x+1,y,z);L(s,a,b,c,d,{st:C.line,sw:1.1})}
+    if(y<3){const [c,d]=pr(x,y+1,z);L(s,a,b,c,d,{st:C.line,sw:1.1})}
+    if(z<3){const [c,d]=pr(x,y,z+1);L(s,a,b,c,d,{st:C.line,sw:1.1})}}
+  for(let z=3;z>=0;z--)for(let x=0;x<4;x++)for(let y=0;y<4;y++){const [a,b]=pr(x,y,z);R(s,a-9,b-9,18,18,{f:xc[x],st:C.panel,sw:1.5,rx:3,op:1-z*.12})}
+  const ax=(p0,p1,lab,dx,dy)=>{const [a,b]=pr(...p0),[c,d]=pr(...p1);A(s,`M${a},${b} L${c},${d}`,"soft",{sw:1.4});T(s,c+dx,d+dy,lab,{s:16,f:C.soft,c:"m"})};
+  ax([-.2,-.55,0],[3.5,-.55,0],"X",8,5);
+  ax([-.55,-.2,0],[-.55,3.5,0],"Y",-6,-8);
+  ax([3.55,-.4,0],[3.55,-.4,3.6],"Z",8,0);
+  T(s,230,34,"64 chips · 4 × 4 × 4 torus",{a:"middle",s:14,f:C.soft});
+  // weight matrix
+  const mx=470,my=70,mw=300,mh=160;
+  for(let r=0;r<4;r++)R(s,mx,my+r*mh/4,mw,mh/4,{f:xc[r],op:.75,rx:0});
+  for(let c=1;c<16;c++)L(s,mx+c*mw/16,my,mx+c*mw/16,my+mh,{st:C.ink,sw:1.4});
+  R(s,mx,my,mw,mh,{f:"none",st:C.text,sw:1.2,rx:0});
+  T(s,mx+mw/2,my-14,"one FFN weight  _W_ :  _E_ × _F_",{a:"middle",s:16});
+  T(s,mx-12,my+mh/2+5,"_E_",{a:"end",s:16});T(s,mx+mw/2,my+mh+24,"_F_",{a:"middle",s:16});
+  TL(s,mx+mw+18,my+40,["rows split 4 ways","along  _X_  (colours)"],{s:13.5,f:C.soft,lh:19});
+  TL(s,mx+mw+18,my+110,["columns split 16","ways along  _Y·Z_"],{s:13.5,f:C.soft,lh:19});
+  // numbers
+  [["28.5 ms","per token · PaLM 540B · int8 weights · batch 64"],["14%","of peak FLOPs at that point"],["660 → 43,000","max context at batch 128, once multi-query KV is sharded by batch"]]
+    .forEach(([v,t],i)=>{const y=306+i*44;T(s,470,y,v,{s:19,f:C.yellow});T(s,470,y+18,t,{s:13,f:C.soft})});
+})();
+
+/* ---------- KV bytes ---------- */
+(function(){
+  const s=$("fig-kv");
+  T(s,30,34,"KV cache per token, all layers, 16-bit",{s:15,w:700});
+  const rows=[["Llama 3.1 405B","GQA, 8 KV heads",516],["Llama 3 70B / Qwen2.5-72B","GQA, 8 KV heads",328],["Muse Spark Open","GQA, 16 KV heads",254],["DeepSeek-V3 / R1","MLA latent",70],["gpt-oss-120b","GQA, half the layers banded",37]];
+  const bx=250,bw=210;
+  rows.forEach(([m,a,v],i)=>{const y=70+i*52;T(s,bx-14,y+10,m,{a:"end",s:14});T(s,bx-14,y+27,a,{a:"end",s:12,f:C.soft});
+    R(s,bx,y,bw*v/516,24,{f:C.gold,op:i===3?.95:.6,rx:2});T(s,bx+bw*v/516+8,y+17,v+" kB",{s:14,f:i===3?C.gold:C.text})});
+  T(s,30,350,"DeepSeek: 70 kB × ~5,000 tokens × ~88 sequences ≈ 31 GB of KV per GPU",{s:13.5,f:C.soft});
+  // right: split diagrams
+  const rx=530;
+  function row(y,title,ok,draw){T(s,rx,y,title,{s:14.5,w:700});draw(y+12);T(s,940,y,ok?"✓":"✗",{a:"end",s:20,f:ok?C.green:C.red})}
+  row(40,"GQA, 8 heads, TP8",1,y=>{for(let i=0;i<8;i++){const x=rx+i*50;R(s,x,y,44,52,{f:C.cell,st:C.dim});R(s,x+14,y+8,16,36,{f:C.gold,op:.85,rx:2})}
+    T(s,rx,y+72,"each GPU keeps 1 of the 8 heads",{s:12.5,f:C.soft})});
+  row(160,"MLA, tensor-parallel attention",0,y=>{for(let i=0;i<4;i++){const x=rx+i*100;R(s,x,y,92,52,{f:C.cell,st:C.dim});R(s,x+8,y+8,76,36,{f:C.gold,op:.85,rx:2})}
+    T(s,rx,y+72,"the one shared latent is copied to every GPU",{s:12.5,f:C.red})});
+  row(280,"MLA, data-parallel attention",1,y=>{const r=rng(3);for(let i=0;i<4;i++){const x=rx+i*100;R(s,x,y,92,52,{f:C.cell,st:C.dim});for(let k=0;k<3;k++)R(s,x+8,y+7+k*13,30+r()*46,10,{f:C.gold,op:.85,rx:2})}
+    T(s,rx,y+72,"each GPU keeps different sequences",{s:12.5,f:C.soft})});
+})();
+
+/* ---------- DeepSeek wide EP ---------- */
+(function(){
+  const s=$("fig-ds");
+  const x0=40,y0=48,cw=49,ch=49,r=rng(11);
+  T(s,x0,26,"18 servers × 8 H800 = one decode instance",{s:14.5,f:C.soft});
+  const cells=[];
+  for(let c=0;c<18;c++){R(s,x0+c*cw-3,y0-4,cw-2,8*ch+4,{f:"none",st:C.line,rx:5});
+    for(let rr=0;rr<8;rr++){const x=x0+c*cw,y=y0+rr*ch;R(s,x,y,cw-8,ch-8,{f:C.cell,st:C.dim,sw:.8,rx:3});
+      const kv=.45+r()*.4;R(s,x+4,y+4,(cw-16)*kv,10,{f:C.gold,op:.85,rx:1.5});R(s,x+4,y+16,(cw-16)*(.4+r()*.4),6,{f:C.gold,op:.5,rx:1.5});
+      const eg=[];for(let k=0;k<3;k++)eg.push(R(s,x+4+k*11.5,y+27,9,9,{f:k<2?C.green:C.teal,op:.9,rx:1.5}));
+      cells.push({c,rr,x,y,eg})}}
+  const src=cells.find(o=>o.c===3&&o.rr===2);
+  const tg=[[0,6],[5,0],[7,5],[9,1],[11,4],[13,7],[15,2],[17,5]];
+  const sx=src.x+20,sy=src.y+20;
+  R(s,src.x-2,src.y-2,cw-4,ch-4,{f:"none",st:C.yellow,sw:2,rx:4});
+  tg.forEach(([c,rr],i)=>{const t=cells.find(o=>o.c===c&&o.rr===rr);const k=i%2;const e=t.eg[k];e.setAttribute("stroke",C.red);e.setAttribute("stroke-width","2");
+    const tx=t.x+4+k*11.5+4.5,ty=t.y+31;const mx=(sx+tx)/2,my=Math.min(sy,ty)-60-Math.abs(tx-sx)*.08;
+    A(s,`M${sx},${sy} Q${mx},${my} ${tx},${ty-5}`,"red",{sw:1.6,c:"flow"})});
+  Dot(s,sx,sy,5,C.yellow,{st:C.ink,sw:1.5});
+  // legend
+  const ly=y0+8*ch+30;
+  R(s,x0,ly-11,24,10,{f:C.gold,op:.85,rx:1.5});T(s,x0+32,ly-2,"KV cache of this GPU's own ~88 sequences",{s:13.5,f:C.soft});
+  R(s,x0+330,ly-12,9,9,{f:C.green,rx:1.5});R(s,x0+342,ly-12,9,9,{f:C.green,rx:1.5});T(s,x0+358,ly-2,"2 routed experts",{s:13.5,f:C.soft});
+  R(s,x0+490,ly-12,9,9,{f:C.teal,rx:1.5});T(s,x0+506,ly-2,"shared expert",{s:13.5,f:C.soft});
+  Dot(s,x0+626,ly-7,5,C.yellow);T(s,x0+638,ly-2,"one token → its 8 experts",{s:13.5,f:C.soft});
+  const ny=ly+38;
+  [["144","H800 GPUs"],["EP144","experts spread over all"],["DP144","attention, no TP"],["~1,850","output tok/s per GPU"],["20–22","tok/s per user"]]
+    .forEach(([v,t],i)=>{const x=x0+i*178;T(s,x,ny,v,{s:22,f:C.yellow});T(s,x,ny+19,t,{s:12.5,f:C.soft})});
+})();
+
+/* ---------- DeepSeek lineage ---------- */
+(function(){
+  const s=$("fig-lineage");
+  const rows=[
+    ["V2","May 2024",8,0,C.gold,["one 8 × H800 server","> 50k tok/s per server"]],
+    ["V3 report","Dec 2024 · design",320,0,C.gold,["attention TP4 × DP80, EP320","1 expert per GPU, 64 GPUs for spares"]],
+    ["V3 / R1","Feb 2025 · production",144,0,C.gold,["DP144 / EP144, no TP","2 routed + 1 shared expert per GPU"]],
+    ["V4.1-Flash","Oct 2026 · DeepInfer",64,64,C.blue,["64–128 GPUs in one supernode, DP = EP","~60 sequences per GPU, 5-token drafts"]],
+  ];
+  const x0=200,sq=7,gp=1.5;
+  let y=26;
+  rows.forEach(([n,d,cnt,extra,c,notes])=>{
+    T(s,x0-20,y+22,n,{a:"end",s:16,w:700});T(s,x0-20,y+42,d,{a:"end",s:12.5,f:C.soft});
+    const tot=cnt+extra;
+    for(let i=0;i<tot;i++){const col=Math.floor(i/8),rr=i%8;const x=x0+col*(sq+gp)+Math.floor(col/2)*0,yy=y+rr*(sq+gp);
+      if(i<cnt)R(s,x,yy,sq,sq,{f:c,op:.85,rx:1});else R(s,x+.5,yy+.5,sq-1,sq-1,{f:"none",st:c,sw:1,rx:1})}
+    const w=Math.ceil(tot/8)*(sq+gp);
+    T(s,x0+w+12,y+28,String(cnt+(extra?"–"+tot:"")),{s:22,f:C.yellow});
+    TL(s,640,y+18,notes,{s:13.5,f:C.soft,lh:19});
+    y+=88});
+  R(s,x0,y-4,8,8,{f:C.gold,op:.85,rx:1});T(s,x0+14,y+4,"H800 (Hopper)",{s:12.5,f:C.soft});
+  R(s,x0+130,y-4,8,8,{f:C.blue,op:.85,rx:1});T(s,x0+144,y+4,"Blackwell (SM100) or Ascend 950",{s:12.5,f:C.soft});
+  R(s,x0+390,y-3.5,7,7,{f:"none",st:C.blue,rx:1});T(s,x0+404,y+4,"upper end of a range",{s:12.5,f:C.soft});
+})();
+
+/* ---------- PD disaggregation ---------- */
+(function(){
+  const s=$("fig-pd");
+  R(s,40,40,250,180,{f:"rgba(169,139,212,.06)",st:C.purple,rx:10});
+  T(s,58,66,"Prefill pool",{s:16,w:700,f:C.purple});T(s,58,86,"whole prompt at once · compute-bound",{s:12.5,f:C.soft});
+  for(let i=0;i<4;i++){const x=70+(i%2)*104,y=104+Math.floor(i/2)*54;R(s,x,y,88,44,{f:C.cell,st:C.dim});R(s,x+8,y+8,72,28,{f:C.purple,op:.55,rx:2})}
+  A(s,"M4,130 L36,130","soft",{sw:1.6});T(s,6,120,"prompt",{s:12,f:C.soft});
+  R(s,420,40,440,180,{f:"rgba(88,196,221,.05)",st:C.blue,rx:10});
+  T(s,438,66,"Decode pool",{s:16,w:700,f:C.blue});T(s,438,86,"one token per sequence per step · memory-bound",{s:12.5,f:C.soft});
+  const r=rng(5);
+  for(let i=0;i<12;i++){const x=438+(i%6)*69,y=104+Math.floor(i/6)*54;R(s,x,y,60,44,{f:C.cell,st:C.dim});
+    for(let k=0;k<3;k++)R(s,x+6,y+6+k*11,20+r()*28,8,{f:C.gold,op:.85,rx:1.5})}
+  A(s,"M296,130 L414,130","gold",{sw:4,c:"flow"});
+  T(s,355,118,"KV cache",{a:"middle",s:14,f:C.gold});T(s,355,152,"RDMA · NIXL · TCP",{a:"middle",s:11.5,f:C.soft});
+  A(s,"M866,130 L944,130","soft",{sw:1.6});T(s,905,120,"tokens",{a:"middle",s:12,f:C.soft});
+  // ratios
+  T(s,40,272,"Prefill : decode in disclosed deployments",{s:15,w:700});
+  const rows=[["DeepSeek V3/R1 production (E)",95,131,"95 : 131 servers"],["DeepSeek DeepInfer, 2026",1,1,"≈ 1 : 1 GPUs"],["SGLang, DeepSeek on H100",4,9,"4 : 9 servers"],["Kimi K2 (4P12D)",4,12,"4 : 12 servers"],["Huawei xDeepServe",8,8,"8 : 8 servers"],["InferenceX GB200, low latency",4,32,"4 : 32 GPUs"],["InferenceX GB200, max throughput",12,20,"12 : 20 GPUs"],["Meta, Llama 4 Maverick",1,1,"1 : 1 hosts"],["Scaling book, 8K in / 512 out",3,1,"3 : 1"]];
+  const bx=330,bw=430;
+  rows.forEach(([n,p,d,t],i)=>{const y=292+i*28,f=p/(p+d);T(s,bx-14,y+14,n,{a:"end",s:13.5});
+    R(s,bx,y+2,bw*f,17,{f:C.purple,op:.8,rx:2});R(s,bx+bw*f+2,y+2,bw*(1-f)-2,17,{f:C.blue,op:.7,rx:2});T(s,bx+bw+12,y+15,t,{s:13,f:C.soft})});
+})();
+
+/* ---------- AFD ---------- */
+(function(){
+  const s=$("fig-afd");
+  const x0=150,sw=66,mb=[C.blue,C.teal,C.purple],names=["m1","m2","m3"];
+  T(s,x0-12,98,"attention GPUs",{a:"end",s:14,f:C.gold});T(s,x0-12,116,"hold the KV",{a:"end",s:12,f:C.soft});
+  T(s,x0-12,218,"expert GPUs",{a:"end",s:14,f:C.green});T(s,x0-12,236,"hold the weights",{a:"end",s:12,f:C.soft});
+  R(s,x0,80,6*sw,48,{f:"none",st:C.gold,rx:6,op:.6});R(s,x0,200,6*sw,48,{f:"none",st:C.green,rx:6,op:.6});
+  for(let t=0;t<6;t++){
+    const a=t%3;R(s,x0+t*sw+4,86,sw-8,36,{f:mb[a],op:.75,rx:3});T(s,x0+t*sw+sw/2,109,names[a],{a:"middle",s:13,f:C.ink});
+    if(t>0){const f=(t-1)%3;R(s,x0+t*sw+4,206,sw-8,36,{f:mb[f],op:.75,rx:3});T(s,x0+t*sw+sw/2,229,names[f],{a:"middle",s:13,f:C.ink})}
+    else{T(s,x0+sw/2,229,"·",{a:"middle",s:13,f:C.dim})}
+    if(t<5)A(s,`M${x0+t*sw+sw-10},${126} L${x0+(t+1)*sw+10},${202}`,"red",{sw:1.4,op:.8});
+  }
+  A(s,`M${x0+sw*2-10},${204} Q${x0+sw*2.5},${165} ${x0+sw*3+10},${128}`,"red",{sw:1.4,dash:"4 4",op:.8});
+  A(s,`M${x0},280 L${x0+6*sw},280`,"soft",{sw:1.2});T(s,x0+6*sw,300,"time",{a:"end",s:12.5,f:C.soft});
+  TL(s,x0,330,["Three micro-batches ping-pong between the pools.","Each pool is sized for its own bottleneck."],{s:13.5,f:C.soft,lh:20});
+  const rx=600;let y=44;
+  [[C.gold,"StepFun Step-3","32 Hopper GPUs: 2 attention + 2 FFN servers","3,910–4,039 tok/s per GPU at 50 ms per token"],
+   [C.green,"ByteDance MegaScale-Infer","H20s for attention, L40S cards for experts","≈ 10,000 GPUs in production"],
+   [C.blue,"Huawei xDeepServe","480 attention dies : 288 expert dies","on CloudMatrix384"],
+   [C.purple,"NVIDIA, 2026","Rubin GPUs hold attention and KV,","Groq LPX racks run the experts"]]
+  .forEach(([c,h,a,b])=>{Dot(s,rx+6,y-5,5,c);T(s,rx+20,y,h,{s:15,w:700});T(s,rx+20,y+20,a,{s:13,f:C.soft});T(s,rx+20,y+38,b,{s:13,f:C.soft});y+=82});
+})();
+
+/* ---------- network vs rack ---------- */
+(function(){
+  const s=$("fig-net");
+  T(s,30,28,"4 × 8-GPU servers",{s:15,w:700});
+  const hub=[230,176];
+  const boxes=[[40,50],[300,50],[40,210],[300,210]];
+  boxes.forEach(([x,y])=>L(s,x+80,y+32,hub[0],hub[1],{st:C.red,sw:1.3,dash:"3 4",c:"flow slow"}));
+  boxes.forEach(([x,y])=>{R(s,x,y,160,64,{f:C.panel,st:C.soft,rx:6});R(s,x+8,y+28,144,8,{f:C.blue,op:.35,rx:2});
+    for(let i=0;i<8;i++)R(s,x+10+(i%4)*36,y+(i<4?8:40),30,16,{f:C.cell,st:C.dim,sw:.8,rx:2})});
+  Dot(s,hub[0],hub[1],28,C.panel,{st:C.red,sw:1.5});T(s,hub[0],hub[1]+4,"IB/RoCE",{a:"middle",s:11,f:C.red});
+  T(s,268,181,"≈ 50 GB/s per GPU",{s:13,f:C.red});
+  T(s,120,296,"900 GB/s inside each server",{a:"middle",s:12.5,f:C.blue});
+  // NVL72
+  const nx=520,ny=40;
+  T(s,nx,28,"one GB200 NVL72 rack",{s:15,w:700});
+  R(s,nx,ny,420,212,{f:C.panel,st:C.soft,rx:8});
+  for(let c=0;c<18;c++){const x=nx+12+c*22.2;
+    L(s,x+9,ny+56,x+9,ny+80,{st:C.blue,sw:1.2,op:.6});L(s,x+9,ny+108,x+9,ny+128,{st:C.blue,sw:1.2,op:.6});
+    for(let r=0;r<4;r++){const y=ny+14+r*24+(r>1?66:0);R(s,x,y,18,18,{f:C.cell,st:C.dim,sw:.8,rx:2})}}
+  R(s,nx+12,ny+80,396,28,{f:C.blue,op:.3,st:C.blue,rx:4});
+  L(s,nx+20,ny+94,nx+400,ny+94,{st:C.red,sw:2.5,c:"flow"});
+  T(s,nx+210,ny+198,"72 GPUs, one NVLink domain · 900 GB/s per GPU",{a:"middle",s:13,f:C.blue});
+})();
+
+/* ---------- scale-up domains ---------- */
+(function(){
+  const s=$("fig-domain");
+  T(s,30,30,"Accelerators in one scale-up domain",{s:15,w:700});
+  const rows=[["Microsoft Maia 200 tray",4,"Ethernet collectives beyond, to 6,144"],["HGX H100 / H200 / B200 · MI355X",8,""],["AWS Trainium2 UltraServer",64,""],["TPU v7 Ironwood cube",64,"optical switching joins cubes"],["GB200 / GB300 NVL72 · AMD Helios",72,"MTIA 400 also 72"],["AWS Trainium3 UltraServer",144,""],["Huawei CloudMatrix384",384,""],["TPU 8i (Boardfly)",1024,"≤ 7 hops between any two chips"],["Huawei Atlas 950 SuperPoD",8192,""],["TPU Ironwood pod",9216,""]];
+  const bx=320,bw=440,lx=v=>bw*Math.log10(v)/4;
+  for(const t of [1,10,100,1000,10000]){const x=bx+lx(t);L(s,x,48,x,400,{st:C.line,sw:.8,dash:"2 4"});T(s,x,418,t>=1000?(t/1000)+"k":String(t),{a:"middle",s:12.5,f:C.soft})}
+  rows.forEach(([n,v,note],i)=>{const y=56+i*34;T(s,bx-14,y+15,n,{a:"end",s:13.5});
+    R(s,bx,y+2,lx(v),18,{f:v<=8?C.blue:C.teal,op:v<=8?.7:.55+.04*i,rx:2});
+    T(s,bx+lx(v)+8,y+16,v.toLocaleString("en-US"),{s:13.5,f:C.yellow});
+    if(note)T(s,bx+lx(v)+(String(v).length*9+22),y+16,note,{s:12,f:C.soft})});
+})();
+
+/* ---------- trade-off curve ---------- */
+(function(){
+  const s=$("fig-curve");
+  const x0=84,x1=640,y0=36,y1=370;
+  const lx=v=>x0+v/320*(x1-x0),ly=v=>y1-v/15000*(y1-y0);
+  for(let v=0;v<=15000;v+=2500){L(s,x0,ly(v),x1,ly(v),{st:C.line,sw:.8});T(s,x0-10,ly(v)+4,v.toLocaleString("en-US"),{a:"end",s:12.5,f:C.soft})}
+  for(let v=0;v<=300;v+=50){L(s,lx(v),y0,lx(v),y1,{st:C.line,sw:.8});T(s,lx(v),y1+20,String(v),{a:"middle",s:12.5,f:C.soft})}
+  T(s,(x0+x1)/2,y1+44,"tokens per second, per user",{a:"middle",s:14,f:C.soft});
+  const yl=T(s,0,0,"output tokens per second, per GPU",{a:"middle",s:14,f:C.soft});yl.setAttribute("transform",`translate(22 ${(y0+y1)/2}) rotate(-90)`);
+  const gb=[[17.8,14700],[25,14125],[60,11017],[100,6781],[125,4130],[150,1922],[200,432],[250,186]];
+  const b2=[[25,12292],[60,9185],[100,3047],[125,941],[150,583],[200,332],[250,193],[300,67]];
+  function line(d,c){P(s,"M"+d.map(([a,b])=>`${lx(a)},${ly(b)}`).join(" L"),{st:c,sw:3});d.forEach(([a,b])=>Dot(s,lx(a),ly(b),4.5,c,{st:C.panel,sw:1.5}))}
+  line(b2,C.gold);line(gb,C.blue);
+  // 4.39x bracket
+  L(s,lx(125),ly(4130),lx(125),ly(941),{st:C.text,sw:1.2,dash:"3 3"});T(s,lx(125)+8,ly(2400),"4.4×",{s:16,f:C.text});
+  T(s,lx(17.8)+10,ly(14700)-8,"EP4 · max throughput",{s:12.5,f:C.blue});
+  T(s,lx(150)+10,ly(3200),"EP32 mid-curve",{s:12.5,f:C.blue});
+  T(s,lx(238),ly(2200),"B200 catches up:",{a:"middle",s:12.5,f:C.gold});T(s,lx(238),ly(2200)+17,"batches too small",{a:"middle",s:12.5,f:C.gold});T(s,lx(238),ly(2200)+34,"for NVLink to matter",{a:"middle",s:12.5,f:C.gold});
+  // legend
+  Dot(s,x1-170,y0+14,5,C.blue);T(s,x1-158,y0+19,"GB200 NVL72",{s:13.5});
+  Dot(s,x1-170,y0+36,5,C.gold);T(s,x1-158,y0+41,"B200, 8-GPU servers",{s:13.5});
+  // SRAM side
+  const rx=682;
+  T(s,rx,58,"Faster than ~300 tok/s per user",{s:15,w:700});
+  TL(s,rx,82,["the batch is tiny and GPUs waste","their FLOPs, so SRAM machines","take over:"],{s:13.5,f:C.soft,lh:19});
+  [["> 1,000","GPT-5.3-Codex-Spark, Cerebras"],["~ 3,000","gpt-oss-120b, Cerebras"],["969","Llama 3.1 405B, Cerebras"],["576 LPUs","for Llama 2 70B, Groq (2024)"]]
+    .forEach(([v,t],i)=>{const y=172+i*48;T(s,rx,y,v,{s:19,f:C.yellow});T(s,rx,y+18,t,{s:12.5,f:C.soft})});
+  T(s,rx,y1+20,"tok/s per user unless noted",{s:11.5,f:C.dim});
+})();
+
+/* ---------- lab cards ---------- */
+(function(){
+  const cards=[
+    ["d","DeepSeek","144","H800, Feb 2025","<b>DP144 / EP144</b>, no TP; 2 routed + 1 shared expert per GPU. In Oct 2026: <b>64–128</b> GPUs per supernode, DP = EP.","o"],
+    ["d","Moonshot (Kimi)","16–96","H200 / H20","K2: <b>16-GPU minimum</b>; <b>96 decode GPUs</b> at DP96 / EP96, 480 sequences each. K3: TP16 on GB200 in NVIDIA's recipe.","o"],
+    ["d","Huawei Cloud","64–160","Ascend 910C","DeepSeek-R1 at <b>EP320 over 160 chips</b>. Production unit: <b>64 chips</b>, 34.8 ms per token.","o"],
+    ["d","StepFun","32–48","Hopper","Step-3 splits <b>attention and FFN onto separate servers</b>: 2A2F = 32 GPUs.","o"],
+    ["d","Meituan","16–128","H800","LongCat-Flash: <b>16-GPU minimum</b> each for prefill and decode; DP attention + wide EP.","o"],
+    ["d","ByteDance","~10k","H20 + L40S","MegaScale-Infer: attention on H20s, <b>experts on L40S cards</b>, ping-ponged micro-batches.","o"],
+    ["d","Meta","8","H100 · MI300X","Llama 4 Maverick: <b>TP8 decode hosts</b>, separate prefill hosts, EAGLE. Llama 405B: all live traffic on MI300X (2024).","o"],
+    ["r","Mistral","8","H200 / B200","Large 3: <b>TP8 + EAGLE</b> on one node. Le Chat Flash Answers ran Large 2 on Cerebras at 1,100 tok/s.","o"],
+    ["r","Alibaba (Qwen)","4–8","H200 · MI355X","Qwen3-235B <b>TP4</b>; Qwen3.5-397B <b>TP8</b> or DP8 + EP. Production layout undisclosed.","p"],
+    ["r","Zhipu (GLM)","8","H100 / H200","GLM-5: <b>TP8 + MTP</b>. NVIDIA's GLM-5.2 recipe: decode TP8 / DP8.","o"],
+    ["r","MiniMax","4–8","H100 / B200","M2: <b>TP4 + EP4</b> beats TP8; M3: TP8 on B200.","o"],
+    ["r","Baidu (ERNIE)","4","—","ERNIE 4.5 300B: <b>TP4</b> with 4-bit weights; PD disaggregation in FastDeploy.","o"],
+    ["c","OpenAI","?","GB200 · Maia · Cerebras","GPT-4 leak: <b>128 GPUs, TP8 × PP16</b>. Since then, hardware only: GPT-5.5 on GB200 NVL72, GPT-5.2 on Maia 200, Codex-Spark on Cerebras. gpt-oss-120b fits 1 GPU.","l"],
+    ["c","Anthropic","?","TPU · Trainium · NVIDIA","Claude on three platforms; <b>separate pools for 1M-token context</b>; sampling runs on the accelerator. Fast mode: 2.5× output speed.","o"],
+    ["c","Google","?","TPU","Gemini: sparse MoE, <b>PD-disaggregated</b>, speculative decoding. Published recipe: PaLM 540B on <b>64 TPU v4</b>.","o"],
+    ["c","xAI","?","cloud providers","Grok-2 open weights: <b>TP8</b>. For Grok 3 onward, \"inference is done by our cloud providers\".","o"],
+    ["c","Amazon","?","Trainium","Most Bedrock tokens run on Trainium. Nova sizes and layouts undisclosed.","o"],
+    ["c","Microsoft","?","Maia 200","Maia 200 serves GPT-5.2; <b>4-chip trays</b>, Ethernet collectives to 6,144 chips. MAI layouts undisclosed.","o"],
+  ];
+  const tagName={o:"O",p:"3P",l:"L",e:"E"};
+  $("cards").innerHTML=cards.map(([k,lab,big,hw,body,tag])=>`<article class="card ${k}"><h4>${lab}<span class="tag ${tag}">${tagName[tag]}</span></h4><div class="big">${big} <small>${hw}</small></div><p>${body}</p></article>`).join("");
+})();
+</script>
+</body>
+</html>
