@@ -58,7 +58,7 @@ h2 .k{font-family:var(--mono);font-size:.5em;color:var(--faint);letter-spacing:.
 /* model table */
 .mt{min-width:980px;display:grid;grid-template-columns:11.5rem 8rem minmax(16rem,1fr) minmax(16rem,1fr) 9.5rem;font-size:.98rem;line-height:1.3}
 .mt>div{padding:.6rem .7rem;border-top:1px solid var(--line);display:flex;flex-direction:column;justify-content:center}
-.mt .h{border-top:none;color:var(--slate);font-size:.9rem;padding-bottom:.4rem}
+.mt .h{display:block;align-self:end;border-top:none;color:var(--slate);font-size:.9rem;padding-bottom:.4rem}
 .mt .lab{grid-column:1/-1;border-top:none;padding:1.4rem .7rem .35rem;font-weight:600;font-size:1.05rem;letter-spacing:.01em}
 .mt .mod b{font-weight:600}
 .mt small{color:var(--slate);font-size:.82rem;line-height:1.3}
@@ -101,6 +101,7 @@ svg .wave{animation:wave 2.56s linear infinite}
   <p class="lede">How each major model is split across chips while it writes its answer: how many GPUs, and how attention and the experts are divided between them.</p>
   <div class="keys" id="keys"></div>
   <div class="stage"><div class="mt" id="mt"></div></div>
+  <p class="legend"><b>DP</b> applies only to attention and the other small shared layers. In DeepSeek V3 that is about 3% of the weights, so each GPU can hold a full copy. The experts, the other 97%, are what EP spreads across the GPUs, which is why DP144 and EP144 go together.</p>
   <p class="legend"><span class="tag o">O</span> the lab's own deployment or model card · <span class="tag p">3P</span> a framework or NVIDIA recipe · <span class="tag l">L</span> leaked. Where a model card gives one layout, it is the one shown; real fleets may run others.</p>
 </header>
 
@@ -241,22 +242,22 @@ function pic(kind,n,role){
   // [model, source, tag, gpus, chips, [kind,n,label,desc] attention, [kind,n,label,desc] experts/FFN, prefill]
   const data=[
     ["DeepSeek",C.gold,[
-      ["V3 / R1","production, 2025",O,"144","H800",["dp",144,"DP144","own users on every GPU"],["ep",144,"EP144","2 experts + 1 shared per GPU"],"separate: 32 GPUs"],
-      ["V4.1-Flash","DeepInfer, 2026",O,"64–128","Blackwell or Ascend",["dp",128,"DP64–128","own users on every GPU"],["ep",128,"EP64–128","a few experts per GPU"],"separate: 2–8 GPUs"],
+      ["V3 / R1","production, 2025",O,"144","H800",["dp",144,"DP144","full copy on every GPU (3% of weights)"],["ep",144,"EP144","2 of the 256 experts per GPU (97% of weights)"],"separate: 32 GPUs"],
+      ["V4.1-Flash","DeepInfer, 2026",O,"64–128","Blackwell or Ascend",["dp",128,"DP64–128","full copy on every GPU, own users"],["ep",128,"EP64–128","a few experts per GPU"],"separate: 2–8 GPUs"],
     ]],
     ["Moonshot",C.gold,[
-      ["Kimi K2","large-scale guide",O,"96","H200",["dp",96,"DP96","own users on every GPU"],["ep",96,"EP96","~5 experts per GPU"],"separate: 32 GPUs"],
+      ["Kimi K2","large-scale guide",O,"96","H200",["dp",96,"DP96","full copy on every GPU, own users"],["ep",96,"EP96","~5 experts per GPU"],"separate: 32 GPUs"],
       ["Kimi K2.5 / K2.6","vLLM recipe",P,"8","H200",["tp",8,"TP8","cut 8 ways"],["tp",8,"TP8","every expert cut 8 ways"],"same GPUs"],
       ["Kimi K3","NVIDIA recipe",P,"16","GB200",["tp",16,"TP16","cut 16 ways"],["tp",16,"TP16","every expert cut 16 ways"],"separate: 16 GPUs"],
     ]],
     ["Alibaba",C.blue,[
       ["Qwen3-235B","model card",O,"4","H100 / H200",["tp",4,"TP4","cut 4 ways"],["tp",4,"TP4","every expert cut 4 ways"],"same GPUs"],
       ["Qwen3.5-397B","recipe, for speed",P,"8","H200 / MI355X",["tp",8,"TP8","cut 8 ways"],["tp",8,"TP8","every expert cut 8 ways"],"same GPUs"],
-      ["Qwen3.5-397B","recipe, for throughput",P,"8","H200 / MI355X",["dp",8,"DP8","own users on every GPU"],["ep",8,"EP8","1/8 of the experts per GPU"],"same GPUs"],
+      ["Qwen3.5-397B","recipe, for throughput",P,"8","H200 / MI355X",["dp",8,"DP8","full copy on every GPU, own users"],["ep",8,"EP8","1/8 of the experts per GPU"],"same GPUs"],
     ]],
     ["Zhipu",C.blue,[
       ["GLM-5","model card",O,"8","H200",["tp",8,"TP8","cut 8 ways"],["tp",8,"TP8","every expert cut 8 ways"],"same GPUs"],
-      ["GLM-5.2","NVIDIA recipe",P,"8","H200",["dp",8,"DP8","own users on every GPU"],["tp",8,"TP8","every expert cut 8 ways"],"separate: 8 GPUs"],
+      ["GLM-5.2","NVIDIA recipe",P,"8","H200",["dp",8,"DP8","full copy on every GPU, own users"],["tp",8,"TP8","every expert cut 8 ways"],"separate: 8 GPUs"],
     ]],
     ["MiniMax",C.blue,[
       ["MiniMax-M2","model card",O,"4","96 GB GPUs",["tp",4,"TP4","cut 4 ways"],["ep",4,"EP4","1/4 of the experts per GPU"],"same GPUs"],
@@ -268,13 +269,13 @@ function pic(kind,n,role){
       ["Step-3","production",O,"32","Hopper",["dp",16,"DP16","on 16 attention GPUs"],["eptp",16,"EP + TP","on 16 other GPUs"],"separate"],
     ]],
     ["Meituan",C.gold,[
-      ["LongCat-Flash","tech report",O,"16–128","H800",["dp",128,"DP","own users on every GPU"],["ep",128,"EP up to 128","a few experts per GPU"],"separate: 16+ GPUs"],
+      ["LongCat-Flash","tech report",O,"16–128","H800",["dp",128,"DP","full copy on every GPU, own users"],["ep",128,"EP up to 128","a few experts per GPU"],"separate: 16+ GPUs"],
     ]],
     ["ByteDance",C.gold,[
       ["Doubao","MegaScale-Infer",O,"many","H20 + L40S",["dp",8,"DP","on H20 attention servers"],["eptp",16,"EP + TP","1 expert per L40S server"],"separate"],
     ]],
     ["Huawei Cloud",C.gold,[
-      ["DeepSeek-R1","CloudMatrix384",O,"160","Ascend 910C",["dp",320,"DP320","own users on every die"],["ep",320,"EP320","1 expert per die"],"separate: 16 chips"],
+      ["DeepSeek-R1","CloudMatrix384",O,"160","Ascend 910C",["dp",320,"DP320","full copy on every die, own users"],["ep",320,"EP320","1 expert per die"],"separate: 16 chips"],
     ]],
     ["Meta",C.gold,[
       ["Llama 3.1 405B","8-bit",O,"8","H100",["tp",8,"TP8","cut 8 ways"],["tp",8,"TP8","dense, cut 8 ways"],"—"],
@@ -302,7 +303,7 @@ function pic(kind,n,role){
     ]],
   ];
   const mt=$("mt"),add=(cls,html)=>{const d=document.createElement("div");if(cls)d.className=cls;if(html!=null)d.innerHTML=html;mt.appendChild(d);return d};
-  ["Model","GPUs per copy","Attention","Experts / FFN","Prefill"].forEach(h=>add("h",h));
+  ["Model","GPUs per copy","<b>Decode:</b> attention","<b>Decode:</b> experts / FFN","<b>Prefill:</b> runs on"].forEach(h=>add("h",h));
   const tagName={o:"O",p:"3P",l:"L"};
   data.forEach(([lab,lc,rows])=>{
     add("lab",lab).style.color=lc;
