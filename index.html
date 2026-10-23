@@ -55,6 +55,25 @@ h2 .k{font-family:var(--mono);font-size:.5em;color:var(--faint);letter-spacing:.
 .legend b{color:var(--paper);font-weight:500}
 .sources{columns:2 22rem;column-gap:3rem;font-size:.95rem;color:var(--slate);padding-left:1.1rem}
 .sources li{break-inside:avoid;margin-bottom:.35rem}
+/* model table */
+.mt{min-width:980px;display:grid;grid-template-columns:11.5rem 8rem minmax(16rem,1fr) minmax(16rem,1fr) 9.5rem;font-size:.98rem;line-height:1.3}
+.mt>div{padding:.6rem .7rem;border-top:1px solid var(--line);display:flex;flex-direction:column;justify-content:center}
+.mt .h{border-top:none;color:var(--slate);font-size:.9rem;padding-bottom:.4rem}
+.mt .lab{grid-column:1/-1;border-top:none;padding:1.4rem .7rem .35rem;font-weight:600;font-size:1.05rem;letter-spacing:.01em}
+.mt .mod b{font-weight:600}
+.mt small{color:var(--slate);font-size:.82rem;line-height:1.3}
+.mt .n{font-family:"KaTeX_Main",var(--serif);font-size:1.25rem}
+.mt .pic{flex-direction:row;align-items:center;justify-content:flex-start;gap:.7rem}
+.mt .pw{flex:none;width:122px}
+.stage .mt svg,.keys svg{flex:none;width:auto;min-width:0;height:auto;display:block}
+.mt .pic .k{font-family:var(--mono);font-size:.92rem;color:var(--paper)}
+.mt .pd{color:var(--slate);font-size:.9rem}
+.mt .q{color:var(--faint)}
+.keys{display:flex;flex-wrap:wrap;gap:1rem 2.2rem;margin:1.2rem 0 .2rem;font-size:1rem;color:var(--slate)}
+.keys div{display:flex;align-items:center;gap:.7rem}
+.keys b{color:var(--paper);font-family:var(--mono);font-weight:500;font-size:.92rem}
+.tag{display:inline-block;font-family:var(--mono);font-size:.68rem;line-height:1;padding:.25em .4em;border-radius:3px;border:1px solid currentColor;margin-left:.45em;vertical-align:.1em}
+.tag.o{color:var(--green)}.tag.p{color:var(--blue)}.tag.l{color:var(--red)}
 footer{color:var(--slate);font-size:1rem;padding-block:5rem 3rem}
 
 svg .t{font-family:"KaTeX_Main","Newsreader",Georgia,serif;fill:var(--paper)}
@@ -71,19 +90,18 @@ svg .wave{animation:wave 2.56s linear infinite}
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs id="gdefs"></defs></svg>
 
-<header class="hero wrap">
+<header class="hero wrap" id="models">
   <div class="top">
     <b>DecodeAtlas</b>
     <nav aria-label="Sections">
-      <a href="#splits">Splits</a><a href="#node">One server</a><a href="#pipeline">Pipelines</a><a href="#tpu">TPUs</a><a href="#wide">Wide EP</a><a href="#disagg">Disaggregation</a><a href="#sizes">Sizes</a>
+      <a href="#models">Models</a><a href="#splits">Splits</a><a href="#node">One server</a><a href="#pipeline">Pipelines</a><a href="#tpu">TPUs</a><a href="#wide">Wide EP</a><a href="#disagg">Disaggregation</a>
     </nav>
   </div>
   <h1>How frontier models <span class="n">decode</span></h1>
-  <p class="lede">How the major labs spread a model across chips while it writes its answer, as far as anyone has published.</p>
-  <div class="stage">
-    <svg id="fig-labs" viewBox="0 0 960 920" role="img" aria-label="Chart of 18 AI labs against five deployment layouts, showing which each lab has said it uses"></svg>
-  </div>
-  <p class="legend">Each column is one of the layouts drawn further down this page. Only the open-weight labs have said how they serve. The closed labs name their chips and little else.</p>
+  <p class="lede">How each major model is split across chips while it writes its answer: how many GPUs, and how attention and the experts are divided between them.</p>
+  <div class="keys" id="keys"></div>
+  <div class="stage"><div class="mt" id="mt"></div></div>
+  <p class="legend"><span class="tag o">O</span> the lab's own deployment or model card · <span class="tag p">3P</span> a framework or NVIDIA recipe · <span class="tag l">L</span> leaked. Where a model card gives one layout, it is the one shown; real fleets may run others.</p>
 </header>
 
 <main class="wrap">
@@ -144,16 +162,8 @@ svg .wave{animation:wave 2.56s linear infinite}
   </div>
 </section>
 
-<section id="sizes">
-  <h2><span class="k">07</span>How many chips make one copy</h2>
-  <div class="prose"><p>The chips that work together on a single copy of a model, with the layout each uses. Blue entries are what model cards recommend; gold entries are deployments that labs have described.</p></div>
-  <div class="stage">
-    <svg id="fig-count" viewBox="0 0 960 740" role="img" aria-label="Dot plot of accelerators per decode copy for 22 models, from 1 to 320"></svg>
-  </div>
-</section>
-
 <section id="sources">
-  <h2><span class="k">08</span>Sources</h2>
+  <h2><span class="k">07</span>Sources</h2>
   <div class="prose"><p class="legend">The <a href="report.md">long-form report</a> has the detail, a citation for every claim, and where the sources disagree.</p></div>
   <ol class="sources">
     <li><a href="https://github.com/deepseek-ai/open-infra-index/blob/main/202502OpenSourceWeek/day_6_one_more_thing_deepseekV3R1_inference_system_overview.md">DeepSeek, V3/R1 inference system overview</a></li>
@@ -202,71 +212,107 @@ function rng(seed){return()=>{seed=(seed*1664525+1013904223)>>>0;return seed/429
   const m=S("marker",{id:"ah-"+k,viewBox:"0 0 10 10",refX:"8",refY:"5",markerWidth:"9",markerHeight:"9",markerUnits:"userSpaceOnUse",orient:"auto-start-reverse"},gd);
   S("path",{d:"M0,0.8 L10,5 L0,9.2 L2.6,5 z",fill:C[k]},m)}}
 
-/* ---------- hero: who does what ---------- */
+/* ---------- model table ---------- */
+function pic(kind,n,role){
+  const svg=document.createElementNS(NS,"svg"),col=role==="a"?C.blue:C.green;
+  const sq=12,h=24,y=2,many=n>8,show=many?6:Math.max(1,n);
+  const ex=["#83C167","#5CD0B3","#B5D86A","#3FAE8C","#9AD07A"];
+  const cell=x=>R(svg,x,y,sq,h,{f:C.cell,st:C.dim,sw:1,rx:2});
+  let w=0;
+  const more=()=>{T(svg,w+3,y+17,"…",{s:14,f:C.soft});w+=16};
+  if(kind==="tp"){const g=2;for(let i=0;i<show;i++)cell(i*(sq+g));w=show*(sq+g)-g;
+    R(svg,1.5,y+7,w-3,10,{f:col,op:.9,rx:3});for(let i=1;i<show;i++)L(svg,i*(sq+g)-1,y+5,i*(sq+g)-1,y+19,{st:C.panel,sw:1.4});if(many)more()}
+  else if(kind==="dp"){const g=4;for(let i=0;i<show;i++){const x=i*(sq+g);cell(x);R(svg,x+2,y+3,8,7,{f:C.blue,op:.75,rx:1});R(svg,x+2,y+13,8,8,{f:C.gold,op:.9,rx:1})}w=show*(sq+g)-g;if(many)more()}
+  else if(kind==="ep"){const g=4;for(let i=0;i<show;i++){const x=i*(sq+g);cell(x);R(svg,x+2,y+3,8,8,{f:ex[i%5],rx:1});R(svg,x+2,y+13,8,8,{f:ex[(i+2)%5],rx:1})}w=show*(sq+g)-g;if(many)more()}
+  else if(kind==="eptp"){const groups=many?3:Math.max(1,n/2);let x=0;for(let gI=0;gI<groups;gI++){cell(x);cell(x+sq+2);R(svg,x+1.5,y+7,2*sq-1,10,{f:ex[gI%5],rx:3});L(svg,x+sq+1,y+5,x+sq+1,y+19,{st:C.panel,sw:1.4});x+=2*sq+2+6}w=x-6;if(many)more()}
+  else if(kind==="pp"){const groups=Math.min(n,3);let x=0;for(let gI=0;gI<groups;gI++){for(let i=0;i<3;i++)cell(x+i*(sq+2));R(svg,x+1.5,y+7,3*sq+4-3,10,{f:col,op:.9,rx:3});for(let i=1;i<3;i++)L(svg,x+i*(sq+2)-1,y+5,x+i*(sq+2)-1,y+19,{st:C.panel,sw:1.4});
+      x+=3*sq+4;if(gI<groups-1){A(svg,`M${x+1},${y+12} L${x+9},${y+12}`,"soft",{sw:1.3});x+=12}}w=x;if(n>3)more()}
+  else if(kind==="one"){cell(0);R(svg,2,y+3,8,5,{f:C.blue,rx:1});R(svg,2,y+10,8,5,{f:C.gold,rx:1});R(svg,2,y+17,8,5,{f:C.green,rx:1});w=sq}
+  else if(kind==="2d"){const cs=[C.blue,C.teal,C.green,C.gold];for(let r=0;r<4;r++)for(let c=0;c<4;c++)R(svg,c*7,y+r*6.5,6,5.5,{f:cs[r],op:.85,rx:1});w=27}
+  else {R(svg,0,y,26,h,{f:"none",st:C.dim,sw:1,rx:3,dash:"3 3"});T(svg,13,y+17,"?",{a:"middle",s:14,f:C.dim});w=26}
+  svg.setAttribute("width",Math.ceil(w+2));svg.setAttribute("height",h+4);svg.setAttribute("viewBox",`0 0 ${Math.ceil(w+2)} ${h+4}`);svg.setAttribute("aria-hidden","true");
+  return svg}
 (function(){
-  const s=$("fig-labs");
-  const cols=[["tp","Split every","layer"],["pp","Servers","in a line"],["ep","Wide expert","parallel"],["pd","Prefill and","decode apart"],["afd","Attention and","experts apart"]];
-  const cx=[318,412,506,600,694],chipX=770;
-  const iy=34;
-  (function icons(){
-    let x=cx[0];for(let i=0;i<4;i++)R(s,x-22+i*11,iy,9,16,{f:C.blue,op:.6,rx:1.5});L(s,x-22,iy+21,x+20,iy+21,{st:C.red,sw:1.6});
-    x=cx[1];for(let i=0;i<3;i++){R(s,x-24+i*17,iy,11,18,{f:C.blue,op:.6,rx:1.5});if(i<2)L(s,x-12+i*17,iy+9,x-7+i*17,iy+9,{st:C.blue,sw:1.4})}
-    x=cx[2];for(let i=0;i<5;i++){R(s,x-24+i*10,iy,8,8,{f:C.gold,op:.8,rx:1});R(s,x-24+i*10,iy+14,8,8,{f:C.green,op:.85,rx:1})}
-      P(s,`M${x-20},${iy+8} L${x+6},${iy+14} M${x+16},${iy+8} L${x-10},${iy+14} M${x-4},${iy+8} L${x+18},${iy+14}`,{st:C.red,sw:1});
-    x=cx[3];R(s,x-26,iy+2,18,16,{f:C.purple,op:.6,rx:2});A(s,`M${x-5},${iy+10} L${x+5},${iy+10}`,"gold",{sw:1.6});R(s,x+8,iy+2,18,16,{f:C.blue,op:.6,rx:2});
-    x=cx[4];R(s,x-26,iy+2,18,16,{f:C.gold,op:.7,rx:2});P(s,`M${x-5},${iy+6} L${x+5},${iy+6} M${x+5},${iy+14} L${x-5},${iy+14}`,{st:C.red,sw:1.4});R(s,x+8,iy+2,18,16,{f:C.green,op:.8,rx:2});
-  })();
-  cols.forEach(([k,a,b],i)=>{T(s,cx[i],iy+44,a,{a:"middle",s:13.5});T(s,cx[i],iy+60,b,{a:"middle",s:11.5,f:C.soft})});
-  T(s,chipX,iy+44,"Chips",{s:13.5});T(s,chipX,iy+60,"and how many per copy",{s:11.5,f:C.soft});
-  // marks: 1 = lab says it runs this way, 2 = model-card recipe, 3 = leak
-  const groups=[
-    ["Have described how they serve",[
-      ["DeepSeek","V3 · R1 · V4",{ep:1,pd:1},"144 H800; now 64–128 GPUs"],
-      ["Moonshot","Kimi K2 · K3",{tp:2,ep:1,pd:1},"96 H200 for K2"],
-      ["Meituan","LongCat-Flash",{ep:1,pd:1},"16–128 H800"],
-      ["StepFun","Step-3",{afd:1},"32 Hopper GPUs"],
-      ["ByteDance","Doubao",{afd:1},"H20 + L40S"],
-      ["Huawei Cloud","serves DeepSeek, Kimi, GLM…",{ep:1,pd:1,afd:1},"64–160 Ascend 910C"],
-      ["Meta","Llama 3 · Llama 4",{tp:1,pp:1,pd:1},"8 H100 per decode server"],
+  // legend
+  const keys=$("keys");
+  [["tp",8,"a","TP","one copy cut across the GPUs"],["dp",8,"a","DP","each GPU has its own copy and its own users"],["ep",8,"f","EP","each GPU holds different experts"],["pp",2,"a","PP","servers in a line, each with a run of layers"]].forEach(([k,n,r,lab,t])=>{
+    const d=document.createElement("div");d.appendChild(pic(k,n,r));d.insertAdjacentHTML("beforeend",`<span><b>${lab}</b> ${t}</span>`);keys.appendChild(d)});
+  const O="o",P="p",Lk="l";
+  // [model, source, tag, gpus, chips, [kind,n,label,desc] attention, [kind,n,label,desc] experts/FFN, prefill]
+  const data=[
+    ["DeepSeek",C.gold,[
+      ["V3 / R1","production, 2025",O,"144","H800",["dp",144,"DP144","own users on every GPU"],["ep",144,"EP144","2 experts + 1 shared per GPU"],"separate: 32 GPUs"],
+      ["V4.1-Flash","DeepInfer, 2026",O,"64–128","Blackwell or Ascend",["dp",128,"DP64–128","own users on every GPU"],["ep",128,"EP64–128","a few experts per GPU"],"separate: 2–8 GPUs"],
     ]],
-    ["Publish model-card recipes only",[
-      ["Alibaba","Qwen",{tp:2},"4–8 GPUs"],
-      ["Zhipu","GLM",{tp:2},"8 GPUs"],
-      ["MiniMax","MiniMax-M",{tp:2},"4–8 GPUs"],
-      ["Mistral","Mistral Large",{tp:2},"8 GPUs"],
-      ["Baidu","ERNIE",{tp:2,pd:2},"4 GPUs"],
+    ["Moonshot",C.gold,[
+      ["Kimi K2","large-scale guide",O,"96","H200",["dp",96,"DP96","own users on every GPU"],["ep",96,"EP96","~5 experts per GPU"],"separate: 32 GPUs"],
+      ["Kimi K2.5 / K2.6","vLLM recipe",P,"8","H200",["tp",8,"TP8","cut 8 ways"],["tp",8,"TP8","every expert cut 8 ways"],"same GPUs"],
+      ["Kimi K3","NVIDIA recipe",P,"16","GB200",["tp",16,"TP16","cut 16 ways"],["tp",16,"TP16","every expert cut 16 ways"],"separate: 16 GPUs"],
     ]],
-    ["Name their chips, little else",[
-      ["Google","Gemini",{tp:1,pd:1},"TPUs"],
-      ["OpenAI","GPT",{tp:2,pp:3},"NVIDIA · Maia · Cerebras"],
-      ["Anthropic","Claude",{},"TPU · Trainium · NVIDIA"],
-      ["xAI","Grok",{tp:2},"cloud providers' GPUs"],
-      ["Amazon","Nova",{},"Trainium"],
-      ["Microsoft","MAI",{},"Maia 200"],
+    ["Alibaba",C.blue,[
+      ["Qwen3-235B","model card",O,"4","H100 / H200",["tp",4,"TP4","cut 4 ways"],["tp",4,"TP4","every expert cut 4 ways"],"same GPUs"],
+      ["Qwen3.5-397B","recipe, for speed",P,"8","H200 / MI355X",["tp",8,"TP8","cut 8 ways"],["tp",8,"TP8","every expert cut 8 ways"],"same GPUs"],
+      ["Qwen3.5-397B","recipe, for throughput",P,"8","H200 / MI355X",["dp",8,"DP8","own users on every GPU"],["ep",8,"EP8","1/8 of the experts per GPU"],"same GPUs"],
+    ]],
+    ["Zhipu",C.blue,[
+      ["GLM-5","model card",O,"8","H200",["tp",8,"TP8","cut 8 ways"],["tp",8,"TP8","every expert cut 8 ways"],"same GPUs"],
+      ["GLM-5.2","NVIDIA recipe",P,"8","H200",["dp",8,"DP8","own users on every GPU"],["tp",8,"TP8","every expert cut 8 ways"],"separate: 8 GPUs"],
+    ]],
+    ["MiniMax",C.blue,[
+      ["MiniMax-M2","model card",O,"4","96 GB GPUs",["tp",4,"TP4","cut 4 ways"],["ep",4,"EP4","1/4 of the experts per GPU"],"same GPUs"],
+    ]],
+    ["Baidu",C.blue,[
+      ["ERNIE 4.5 300B","model card",O,"4","—",["tp",4,"TP4","cut 4 ways"],["tp",4,"TP4","every expert cut 4 ways"],"same, or separate"],
+    ]],
+    ["StepFun",C.gold,[
+      ["Step-3","production",O,"32","Hopper",["dp",16,"DP16","on 16 attention GPUs"],["eptp",16,"EP + TP","on 16 other GPUs"],"separate"],
+    ]],
+    ["Meituan",C.gold,[
+      ["LongCat-Flash","tech report",O,"16–128","H800",["dp",128,"DP","own users on every GPU"],["ep",128,"EP up to 128","a few experts per GPU"],"separate: 16+ GPUs"],
+    ]],
+    ["ByteDance",C.gold,[
+      ["Doubao","MegaScale-Infer",O,"many","H20 + L40S",["dp",8,"DP","on H20 attention servers"],["eptp",16,"EP + TP","1 expert per L40S server"],"separate"],
+    ]],
+    ["Huawei Cloud",C.gold,[
+      ["DeepSeek-R1","CloudMatrix384",O,"160","Ascend 910C",["dp",320,"DP320","own users on every die"],["ep",320,"EP320","1 expert per die"],"separate: 16 chips"],
+    ]],
+    ["Meta",C.gold,[
+      ["Llama 3.1 405B","8-bit",O,"8","H100",["tp",8,"TP8","cut 8 ways"],["tp",8,"TP8","dense, cut 8 ways"],"—"],
+      ["Llama 3.1 405B","16-bit",O,"16","H100",["pp",2,"TP8 × PP2","2 servers in a line"],["pp",2,"TP8 × PP2","dense"],"—"],
+      ["Llama 4 Maverick","production",O,"8","H100",["tp",8,"TP8","cut 8 ways"],["tp",8,"TP8","every expert cut 8 ways"],"separate: 8 GPUs"],
+    ]],
+    ["Mistral",C.blue,[
+      ["Mistral Large 3","model card",O,"8","H200 / B200",["tp",8,"TP8","cut 8 ways"],["tp",8,"TP8","every expert cut 8 ways"],"same GPUs"],
+    ]],
+    ["xAI",C.blue,[
+      ["Grok-2","model card",O,"8","40 GB+ GPUs",["tp",8,"TP8","cut 8 ways"],["tp",8,"TP8","every expert cut 8 ways"],"same GPUs"],
+    ]],
+    ["OpenAI",C.soft,[
+      ["gpt-oss-120b","model card",O,"1","one 80 GB GPU",["one",1,"none","the whole model fits"],["one",1,"none",""],"same GPU"],
+      ["GPT-4","2023",Lk,"128","A100",["pp",16,"TP8 × PP16","16 servers in a line"],["pp",16,"TP8 × PP16","expert layout not reported"],"—"],
+    ]],
+    ["Google",C.soft,[
+      ["PaLM 540B","2022 paper",O,"64","TPU v4",["2d",64,"2D","KV split by user"],["2d",64,"2D: 4 × 16","each weight cut both ways"],"separate"],
+    ]],
+    ["Not published",C.dim,[
+      ["GPT-5 · GPT-6","OpenAI","","?","GB200 · Maia · Cerebras",["q",0,"",""],["q",0,"",""],"?"],
+      ["Claude","Anthropic","","?","TPU · Trainium · NVIDIA",["q",0,"",""],["q",0,"",""],"?"],
+      ["Gemini","Google","","?","TPU",["q",0,"",""],["q",0,"",""],"separate"],
+      ["Grok 3 onward","xAI","","?","cloud GPUs",["q",0,"",""],["q",0,"",""],"?"],
     ]],
   ];
-  const rh=34;let y=128;
-  groups.forEach(([gname,rows],gi)=>{
-    T(s,24,y+8,gname,{s:13,f:[C.gold,C.blue,C.soft][gi],w:700});
-    L(s,24,y+16,940,y+16,{st:C.line,sw:1});
-    y+=26;
-    rows.forEach(([lab,models,marks,chips],ri)=>{
-      if(ri%2===0)R(s,16,y-2,932,rh,{f:"#ffffff",op:.025,rx:4});
-      T(s,28,y+14,lab,{s:15.5,w:700});T(s,28,y+29,models,{s:11.5,f:C.soft});
-      const cy=y+rh/2-2;
-      cols.forEach(([k],i)=>{const m=marks[k],x=cx[i];
-        if(m===1)Dot(s,x,cy,7,C.gold);
-        else if(m===2)Dot(s,x,cy,6.5,"none",{st:C.blue,sw:2});
-        else if(m===3)Dot(s,x,cy,6.5,"none",{st:C.red,sw:2,dash:"2.5 2.5"});
-        else if(gi===2)T(s,x,cy+5,"?",{a:"middle",s:14,f:C.dim});
-        else Dot(s,x,cy,1.6,C.dim)});
-      T(s,chipX,cy+5,chips,{s:12.5,f:gi===2?C.soft:C.text});
-      y+=rh});
-    y+=22});
-  y+=4;let lx=24;
-  [[1,"the lab says it runs this way"],[2,"the model card recommends it"],[3,"leaked, never confirmed"],[4,"not published"]].forEach(([m,t])=>{
-    if(m===1)Dot(s,lx+7,y,7,C.gold);else if(m===2)Dot(s,lx+7,y,6.5,"none",{st:C.blue,sw:2});else if(m===3)Dot(s,lx+7,y,6.5,"none",{st:C.red,sw:2,dash:"2.5 2.5"});else T(s,lx+7,y+5,"?",{a:"middle",s:14,f:C.dim});
-    const e=T(s,lx+22,y+5,t,{s:13.5,f:C.soft});lx+=e.getComputedTextLength()+52});
+  const mt=$("mt"),add=(cls,html)=>{const d=document.createElement("div");if(cls)d.className=cls;if(html!=null)d.innerHTML=html;mt.appendChild(d);return d};
+  ["Model","GPUs per copy","Attention","Experts / FFN","Prefill"].forEach(h=>add("h",h));
+  const tagName={o:"O",p:"3P",l:"L"};
+  data.forEach(([lab,lc,rows])=>{
+    add("lab",lab).style.color=lc;
+    rows.forEach(([m,src,tag,n,chips,at,ff,pd])=>{
+      add("mod",`<b>${m}</b><small>${src}${tag?`<span class="tag ${tag}">${tagName[tag]}</span>`:""}</small>`);
+      add("",`<span class="n${n==="?"?" q":""}">${n}</span><small>${chips}</small>`);
+      for(const [spec,role] of [[at,"a"],[ff,"f"]]){const [k,num,label,desc]=spec;const d=add("pic");const pw=document.createElement("span");pw.className="pw";pw.appendChild(pic(k,num,role));d.appendChild(pw);
+        if(label||desc)d.insertAdjacentHTML("beforeend",`<span><span class="k">${label}</span>${desc?`<br><small>${desc}</small>`:""}</span>`)}
+      add("pd",pd);
+    })});
 })();
 
 /* ---------- four splits ---------- */
@@ -436,59 +482,6 @@ function rng(seed){return()=>{seed=(seed*1664525+1013904223)>>>0;return seed/429
     .forEach(([c,h,a])=>{Dot(s,rx+6,y+12,5,c);T(s,rx+20,y+17,h,{s:15});T(s,rx+130,y+17,a,{s:13.5,f:C.soft});y+=40});
 })();
 
-/* ---------- chips per copy ---------- */
-(function(){
-  const s=$("fig-count");
-  const rows=[
-    ["Gemma 3 / 4",1,0,"r","1 GPU"],
-    ["gpt-oss-120b",1,8,"r","1 GPU, or 8 for speed"],
-    ["Qwen3-235B",4,0,"r","split 4 ways"],
-    ["MiniMax-M2",4,0,"r","split 4 ways"],
-    ["ERNIE 4.5",4,0,"r","split 4 ways"],
-    ["Grok-2",8,0,"r","split 8 ways"],
-    ["Mistral Large 3",8,0,"r","split 8 ways"],
-    ["GLM-5",8,0,"r","split 8 ways"],
-    ["Qwen3.5-397B",8,0,"r","split 8 ways"],
-    ["Kimi K2.5",8,0,"r","split 8 ways"],
-    ["Kimi K3",16,0,"r","split 16 ways"],
-    ["Llama 4 Maverick",8,0,"p","split 8 ways (Meta)"],
-    ["Llama 3.1 405B",8,16,"p","1 server, or 2 in a line"],
-    ["Kimi K2",16,96,"p","wide expert parallel"],
-    ["LongCat-Flash",16,128,"p","wide expert parallel"],
-    ["Step-3",32,48,"p","attention / experts split"],
-    ["PaLM 540B",64,0,"p","TPU grid"],
-    ["Huawei Cloud",64,160,"p","wide expert parallel"],
-    ["DeepSeek V4.1",64,128,"p","wide expert parallel"],
-    ["GPT-4 (2023)",128,0,"l","servers in a line (leak)"],
-    ["DeepSeek V3 / R1",144,0,"p","wide expert parallel"],
-    ["DeepSeek V3 report",320,0,"p","wide expert parallel (design)"],
-  ];
-  const col={r:C.blue,p:C.gold,l:C.red};
-  const X0=262,X1=712,lx=v=>X0+Math.log2(v)/9*(X1-X0);
-  const top=92,rh=25,n=rows.length,bot=top+(n+1)*rh;
-  const b1=lx(11.3),b2=lx(90);
-  R(s,X0-14,top-26,b1-X0+14,bot-top+30,{f:"#58C4DD",op:.06,rx:6});
-  R(s,b2,top-26,X1+14-b2,bot-top+30,{f:"#F0AC5F",op:.05,rx:6});
-  T(s,(X0-14+b1)/2,top-36,"one server",{a:"middle",s:13,f:C.blue});
-  T(s,(b1+b2)/2,top-36,"a few servers or one rack",{a:"middle",s:13,f:C.teal});
-  T(s,(b2+X1+14)/2,top-36,"many servers",{a:"middle",s:13,f:C.gold});
-  const lg=[[C.blue,"model-card recipe"],[C.gold,"described by a lab"],[C.red,"leak"]];
-  let lxp=X0-14;lg.forEach(([c,t])=>{Dot(s,lxp+6,22,5.5,c);const e=T(s,lxp+18,27,t,{s:14,f:C.soft});lxp+=e.getComputedTextLength()+46});
-  for(let k=0;k<=9;k++){const x=lx(2**k);L(s,x,top-14,x,bot-8,{st:C.line,sw:.8,dash:"2 4"});T(s,x,bot+12,String(2**k),{a:"middle",s:13,f:C.soft})}
-  T(s,(X0+X1)/2,bot+36,"chips working on one copy of the model",{a:"middle",s:14,f:C.soft});
-  rows.forEach(([name,lo,hi,cat,note],i)=>{
-    const y=top+i*rh+rh/2,c=col[cat];
-    T(s,X0-26,y+5,name,{a:"end",s:14.5});
-    if(hi){L(s,lx(lo),y,lx(hi),y,{st:c,sw:3,op:.85});Dot(s,lx(lo),y,4.5,C.panel,{st:c,sw:2});Dot(s,lx(hi),y,5.5,c)}
-    else if(cat==="l"){Dot(s,lx(lo),y,5,C.panel,{st:c,sw:2,dash:"2 2"})}
-    else Dot(s,lx(lo),y,5.5,c);
-    T(s,lx(hi||lo)+13,y+4.5,note,{s:12.5,f:C.soft});
-  });
-  const y=top+n*rh+rh/2;
-  T(s,X0-26,y+5,"GPT · Claude · Gemini · Grok",{a:"end",s:14.5,f:C.soft});
-  L(s,X0,y,X1,y,{st:C.dim,sw:1.5,dash:"3 6"});
-  T(s,X1+13,y+4.5,"not published",{s:12.5,f:C.dim});
-})();
 </script>
 </body>
 </html>
